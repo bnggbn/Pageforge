@@ -27,6 +27,38 @@
 - Identity Bridge 的供應商登入協定、PKCE 責任分界、各端回呼與 token 生命週期，需在登入實作規格中確認。
 - 以 Hash 命名是內容定址規則；不可變寫入、讀取驗證與存取權限需由儲存合約落實。
 
+## 技術可行性評估（2026-10-02）
+
+方法：檢查目前 Pageforge 程式、已安裝的 vax-sdk 1.0.0 原始碼與供應商官方文件。
+結論：核心文件沙盒可行；完整提案需要分階段實作，部分技術敘述需修正。
+本評估是程式與合約層面的可行性判斷，尚未驗證新的分支模型、原生裝置登入或雲端同步部署。
+以下評估與修正優先於原始提案中尚未驗證的技術敘述。
+
+| 項目                | 判斷與現有依據                                                                                    | 必要工作                                                                                             |
+| ------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Fork／Adopt         | 可行。現有快照與 VAX hash primitives 可沿用，但 `history.ts`、服務端驗證與儲存都假定單一線性 head | 新增 branch／base／head 與採納來源模型、分支驗證、schema 遷移和原子 head 更新                        |
+| 視覺 Diff           | 可行。文字／筆記逐行 diff 已在 Web Worker 執行                                                    | 補雙欄視圖；段落採納需穩定區塊 ID 與來源版本，不能只沿用目前的行號定位                               |
+| 靜默暫存            | 可行。現有儲存已有原子保存機制，但草稿目前仍只在 React state                                      | 新增獨立持久化 draft store、恢復與保存失敗狀態；切換成功以草稿落盤為前提                             |
+| 離線多端同步        | 可行，是主要新增工程。現有 CAS 能拒絕衝突，尚無 outbox 或保留衝突分支                             | 補重試、冪等提交、缺少物件補傳、衝突分支、刪除標記與中斷恢復                                         |
+| 跨平台核心          | 純資料與演算法可共用；目前僅 domain 型別與格式規則已共用                                          | 儲存、檔案、crypto、背景 diff 與 UI 維持平台介面；vax-sdk 的 Buffer／Web Crypto 依賴需做相容性驗證   |
+| 雲端與登入          | 服務層可採 Edge／Serverless；現有 Node 檔案服務不能直接搬到 Worker                                | 新增物件儲存與索引實作、登入橋接、各端回傳登入結果的流程，以及必要的服務端驗證                       |
+| Session Audit Trail | 可做獨立 append-only 操作鏈                                                                       | 另定事件種類、留存與授權；若要宣稱合規或可對外證明，還需可信錨點／簽章等機制，僅本機 hash chain 不足 |
+
+### 必須修正的架構假設
+
+- **KV 不能獨自負責主線 head 的原子更新。** Workers KV 採最終一致性，不適合需要交易的讀改寫；主線、權限與提交一致性建議由 Durable Object 的交易式儲存處理。若只更新單一 manifest，可另驗證 R2 的條件寫入方案；KV 作為可重建的快取或索引投影。[KV 一致性](https://developers.cloudflare.com/kv/concepts/how-kv-works/)、[Durable Object 儲存](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/)、[R2 條件寫入](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/#conditional-operations)。
+- **Google 與 GitHub 的使用者登入不能共用同一個外部 OIDC 假設。** Google 提供 OIDC；GitHub 使用者登入應接 OAuth 授權流程與使用者 API，再由 Bridge 統一內部身分。Bridge 能集中外部回呼，但各端仍需取得登入結果，不能省略 App 回呼或另一個受驗證的交接流程。[Google OIDC](https://developers.google.com/identity/openid-connect/openid-connect)、[GitHub OAuth](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)、[原生登入回呼](https://developers.google.com/identity/protocols/oauth2/native-app)。
+- **Client-Heavy 不代表服務端只收資料而不驗證。** 客戶端可先算 hash 與 diff；服務端仍需驗證身分、文件權限、提交大小、內容與 hash 的關聯，以及預期 head。現有本機服務已有版本驗證，雲端實作需保留這些責任。
+- **免手動 Merge 是可行的 UX 選擇，不能消除分歧。** 自動保留分支可以避免寫入衝突使工作中斷；兩端修改同一段時仍需使用者比較後選擇。採納不能在主線已前進時默默覆蓋另一端的工作。
+- **$0 與極輕量需有條件。** R2 有免費額度與超量計費，不能保證長期零費用；雲端版本數、容量與操作次數需設定限制。Desktop／Mobile 的安裝大小、記憶體、啟動與大型文件操作仍需實測，不以框架或共用比例推定。[R2 計費](https://developers.cloudflare.com/r2/pricing/)、[Electron 效能量測](https://www.electronjs.org/docs/latest/tutorial/performance)。
+
+### 建議實作與驗證順序
+
+1. 本機持久化草稿與切換恢復：驗證重啟、保存失敗、多分頁與文件刪除後的草稿處置。
+2. 整份文字文件的 Fork／Diff／Adopt：保留 VAX primitives，驗證分支來源、採納來源、過期 head 與舊版本遷移；章節／段落 Fork 待穩定區塊模型後加入。
+3. 共用版本核心與平台介面：先接 Desktop 本機儲存，再驗證 Mobile 的相同事件輸入產生相同 canonical bytes 與 SAI。
+4. 可選登入與雲端同步：以兩個離線客戶端同時修改、重複提交、上傳中斷及恢復作為驗收；最後接上獨立會話事件鏈。
+
 以下保留原始架構提案全文。
 
 ---
