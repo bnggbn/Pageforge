@@ -16,7 +16,7 @@ function createWindow(): void {
 
   if (isDev) {
     // Dev: load from Next.js dev server
-    win.loadURL('http://localhost:3000')
+    win.loadURL(process.env.PAGEFORGE_DESKTOP_URL ?? 'http://localhost:3000')
     win.webContents.openDevTools()
   } else {
     // Prod: load from static export copied into renderer/

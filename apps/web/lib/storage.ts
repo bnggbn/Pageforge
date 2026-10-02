@@ -1,9 +1,11 @@
-﻿import * as browser from './indexed-storage'
+import { configure, config, type PublicConfig } from './config'
+const normalizeFontSize = (size: number) => config.reading.fontSizes.includes(size) ? size : config.reading.defaultFontSize
+import * as browser from './indexed-storage'
 import type { DocumentSummary, LibraryDocument, ReadingPosition, Revision } from './documents'
 import { latest } from './documents'
 
 export { database, changeSource, announce } from './indexed-storage'
-export interface StorageInfo { mode: 'disk' | 'browser'; label: string; collectionImported: boolean }
+export interface StorageInfo { mode: 'disk' | 'browser'; label: string; collectionImported: boolean; config?: PublicConfig }
 let storage: Promise<StorageInfo> | null = null
 export function storageInfo(): Promise<StorageInfo> {
   if (!storage) storage = (async () => {
@@ -13,6 +15,7 @@ export function storageInfo(): Promise<StorageInfo> {
     if (response.status === 404) return { mode: 'browser' as const, label: '瀏覽器儲存', collectionImported: true }
     if (!response.ok) throw new Error('本機書架服务無法使用，資料未切換到其他位置。')
     const info = await response.json()
+    if (info.config) configure(info.config)
     if (info.mode !== 'disk') throw new Error('書架服務回傳不支援的儲存模式。')
     return info as StorageInfo
   })().catch(error => { storage = null; throw error })
@@ -76,7 +79,7 @@ export async function saveProgress(id: string, position: ReadingPosition): Promi
   await api(`/documents/${encodeURIComponent(id)}/progress`,'PUT',position)
 }
 export async function readFontSize(): Promise<number> {
-  return (await storageInfo()).mode === 'disk' ? (await api<{fontSize:number}>('/settings')).fontSize : browser.readFontSize()
+  return (await storageInfo()).mode === 'disk' ? normalizeFontSize((await api<{fontSize:number}>('/settings')).fontSize) : browser.readFontSize()
 }
 export async function saveFontSize(size: number): Promise<void> {
   if ((await storageInfo()).mode !== 'disk') return browser.saveFontSize(size)

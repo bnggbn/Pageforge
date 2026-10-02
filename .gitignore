@@ -47,3 +47,4 @@ npm-debug.log*
 !/library/collection/03-格式支援與驗收.md
 !/library/collection/04-閱讀札記.txt
 *.tsbuildinfo
+pageforge.config.local.json

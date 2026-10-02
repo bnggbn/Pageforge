@@ -1,3 +1,4 @@
+import { config } from './config'
 import { latest, summary, type DocumentSummary, type LibraryDocument, type ReadingPosition, type Revision } from './documents'
 
 let opening: Promise<IDBDatabase> | null = null
@@ -97,7 +98,7 @@ export async function saveProgress(id: string, position: ReadingPosition): Promi
 export async function readFontSize(): Promise<number> {
   const db = await database()
   const size = await result(db.transaction('settings').objectStore('settings').get('fontSize'))
-  return typeof size === 'number' && size >= 14 && size <= 28 ? size : 18
+  return typeof size === 'number' && config.reading.fontSizes.includes(size) ? size : config.reading.defaultFontSize
 }
 export async function saveFontSize(size: number) {
   const db = await database()

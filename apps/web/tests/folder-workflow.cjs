@@ -21,7 +21,7 @@ require('./fixtures.cjs');
     const waitReader=async p=>{await p.waitForURL(/reader/);await p.getByRole('button',{name:'版本紀錄',exact:true}).waitFor()};
     await page.goto(url);await page.waitForFunction(()=>document.querySelectorAll('.book-card').length===2);
     assert.equal(await page.getByText('The Creative Act',{exact:true}).count(),0);
-    assert.match(await page.locator('.folder-bar').innerText(),/library\//);
+    assert.ok((await page.locator('.folder-bar').innerText()).includes(`${path.basename(libraryRoot)}/`));
     let documents=(await api('/documents')).value;
     assert.equal(documents.length,2);
     const id=documents.find(d=>d.format==='markdown').id,book=path.join(libraryRoot,'books',id);

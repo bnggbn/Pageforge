@@ -1,6 +1,7 @@
+import { config } from './config'
 import { unzipSync, strFromU8 } from 'fflate'
 import { digest, genesis, createRevision } from './history'
-import { findDuplicate, insertDocument, announce } from './storage'
+import { findDuplicate, insertDocument, announce, storageInfo } from './storage'
 import type { DocumentFormat, LibraryDocument, Section, Sheet } from './documents'
 
 const MiB = 1024 * 1024
@@ -17,7 +18,7 @@ function archive(bytes: Uint8Array): Record<string, Uint8Array> {
   unzipSync(bytes, { filter: entry => {
     total += entry.originalSize
     entries++
-    if (entries > 2000 || total > 40 * MiB || entry.originalSize > 15 * MiB) throw new Error('文件解壓後過大（最多 40 MiB／2,000 個項目）。')
+    if (entries > config.limits.archiveEntries || total > config.limits.archiveMiB * MiB || entry.originalSize > config.limits.archiveEntryMiB * MiB) throw new Error(`文件解壓後過大（最多 ${config.limits.archiveMiB} MiB／${config.limits.archiveEntries} 個項目）。`)
     if (entry.name.includes('..') || entry.name.startsWith('/') || entry.name.includes('\\')) throw new Error('封裝內含不支援的路徑。')
     return false
   } })
@@ -84,13 +85,13 @@ export function parseXlsx(files: Record<string, Uint8Array>): Sheet[] {
     const rows: string[][] = []
     for (const row of tags(data, 'row')) {
       const rowNumber = Number(row.getAttribute('r') ?? rows.length + 1)
-      if (!Number.isInteger(rowNumber) || rowNumber < rows.length + 1 || rowNumber > 10000) throw new Error('工作表列號無效，或超過 10,000 列上限。')
+      if (!Number.isInteger(rowNumber) || rowNumber < rows.length + 1 || rowNumber > config.limits.sheetRows) throw new Error(`工作表列號無效，或超過 ${config.limits.sheetRows} 列上限。`)
       while (rows.length < rowNumber - 1) rows.push([])
       const values: string[] = []
       for (const cell of tags(row, 'c')) {
         const letters = /^([A-Z]+)/.exec(cell.getAttribute('r') ?? '')?.[1]
         const column = letters ? [...letters].reduce((n, char) => n * 26 + char.charCodeAt(0) - 64, 0) - 1 : values.length
-        if (column >= 200 || ++cells > 100000) throw new Error('試算表最多支援 200 欄／100,000 個儲存格。')
+        if (column >= config.limits.sheetColumns || ++cells > config.limits.sheetCells) throw new Error(`試算表最多支援 ${config.limits.sheetColumns} 欄／${config.limits.sheetCells} 個儲存格。`)
         while (values.length < column) values.push('')
         const type = cell.getAttribute('t')
         const raw = tags(cell, 'v')[0]?.textContent ?? ''
@@ -104,10 +105,11 @@ export function parseXlsx(files: Record<string, Uint8Array>): Sheet[] {
   return sheets
 }
 export async function importFile(file: File): Promise<{ id: string; duplicate: boolean }> {
+  await storageInfo()
   const extension = file.name.split('.').at(-1)?.toLowerCase() ?? ''
   const format = formats[extension]
   if (!format) throw new Error('支援 .md、.txt、.pdf、.epub 與 .xlsx；舊版 .xls 尚不支援。')
-  const limit = format === 'markdown' || format === 'text' ? 5 * MiB : 20 * MiB
+  const limit = format === 'markdown' || format === 'text' ? config.limits.textMiB * MiB : config.limits.documentMiB * MiB
   if (!file.size || file.size > limit) throw new Error(`文件不可為空，且不可超過 ${limit / MiB} MiB。`)
   const bytes = await file.arrayBuffer()
   const originalHash = await digest(bytes)

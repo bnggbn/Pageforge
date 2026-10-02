@@ -1,0 +1,5 @@
+{
+  "server": { "port": 3100, "devPort": 3101 },
+  "paths": { "libraryRoot": "library" },
+  "reading": { "defaultFontSize": 20 }
+}

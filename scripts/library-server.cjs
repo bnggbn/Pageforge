@@ -1,3 +1,4 @@
+const { loadConfig, publicConfig } = require('./config.cjs');
 const http = require('node:http');
 const net = require('node:net');
 const fs = require('node:fs');
@@ -19,12 +20,12 @@ function writeJSON(file, value) {
   try { fs.renameSync(temporary, file); }
   catch (error) { fs.unlinkSync(temporary); throw error; }
 }
-function readBody(request) {
+function readBody(request, config) {
   return new Promise((resolve, reject) => {
     const chunks = []; let length = 0;
     request.on('data', chunk => {
       length += chunk.length;
-      if (length > 128 * 1024 * 1024) { const error = new Error('資料過大，無法保存。'); error.status = 413; reject(error); request.destroy(); return; }
+      if (length > config.limits.requestMiB * 1024 * 1024) { const error = new Error('資料過大，無法保存。'); error.status = 413; reject(error); request.destroy(); return; }
       chunks.push(chunk);
     });
     request.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { const error = new Error('請求資料格式錯誤。'); error.status = 400; reject(error); } });
@@ -35,10 +36,10 @@ function metadata(record) {
   const doc = record.document;
   return { id: doc.id, title: doc.title, filename: doc.filename, format: doc.format, createdAt: doc.createdAt, updatedAt: doc.updatedAt, originalHash: doc.originalHash, head: record.revisionIds.at(-1), revisionCount: record.revisionIds.length, progress: record.progress?.percentage ?? 0 };
 }
-async function validateRevision(doc, revision, parent) {
+async function validateRevision(doc, revision, parent, config) {
   if (!revision || !uuid.test(revision.id) || !Array.isArray(revision.notes) || typeof revision.content !== 'string' || !['import', 'edit', 'note', 'restore'].includes(revision.kind)) fail(400, '版本資料格式錯誤。');
   if ((parent ? revision.kind === 'import' : revision.kind !== 'import') || revision.parentId !== (parent?.id ?? null) || revision.prevSAI !== (parent?.sai ?? doc.genesis)) fail(409, '版本鏈與目前文件不一致。');
-  if (Buffer.byteLength(revision.content) > 5 * 1024 * 1024 || Buffer.byteLength(JSON.stringify(revision.notes)) > 5 * 1024 * 1024) fail(413, '文字或筆記快照超過 5 MiB。');
+  if (Buffer.byteLength(revision.content) > config.limits.textMiB * 1024 * 1024 || Buffer.byteLength(JSON.stringify(revision.notes)) > config.limits.snapshotNotesMiB * 1024 * 1024) fail(413, '文字或筆記快照超過設定容量。');
   if (!['markdown', 'text'].includes(doc.format) && revision.content !== '') fail(400, '此格式只支援閱讀與筆記。');
   const env = JSON.parse(revision.envelope);
   if (marshal(env).toString('utf8') !== revision.envelope || env.action_type !== `pageforge.${revision.kind}` || new Date(env.timestamp).toISOString() !== revision.createdAt) fail(400, 'VAX 事件驗證失敗。');
@@ -48,7 +49,7 @@ async function validateRevision(doc, revision, parent) {
   if (toHex(await computeSAI(fromHex(revision.prevSAI), Buffer.from(revision.envelope))) !== revision.sai) fail(400, 'VAX SAI 驗證失敗。');
 }
 
-function createLibraryServer({ libraryRoot = path.resolve(__dirname, '../library'), webRoot = path.resolve(__dirname, '../apps/web/out'), devPort = null } = {}) {
+function createLibraryServer({ config = loadConfig(), libraryRoot = config.paths.libraryRoot, webRoot = config.paths.webRoot, devPort = null } = {}) {
   libraryRoot = path.resolve(libraryRoot);
   const books = path.join(libraryRoot, 'books');
   const state = path.join(libraryRoot, '.pageforge');
@@ -78,7 +79,7 @@ function createLibraryServer({ libraryRoot = path.resolve(__dirname, '../library
   const list = () => fs.readdirSync(books).filter(id => uuid.test(id) && fs.existsSync(path.join(books, id, 'manifest.json'))).map(id => metadata(record(id)));
   const serialize = item => ({ ...item.document, revisions: item.revisionIds.map(id => version(item.document.id, id)), originalBase64: fs.readFileSync(path.join(directory(item.document.id), item.originalFile)).toString('base64'), originalType: item.originalType });
   const settingsFile = path.join(state, 'settings.json');
-  const settings = () => fs.existsSync(settingsFile) ? readJSON(settingsFile) : { fontSize: 18, collectionImported: false };
+  const settings = () => fs.existsSync(settingsFile) ? readJSON(settingsFile) : { fontSize: config.reading.defaultFontSize, collectionImported: false };
   const send = (res, value, status = 200) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); res.end(JSON.stringify(value)); };
   const trusted = req => {
     const port = server.address()?.port;
@@ -92,7 +93,7 @@ function createLibraryServer({ libraryRoot = path.resolve(__dirname, '../library
       const url = new URL(req.url, 'http://localhost');
       if (url.pathname.startsWith('/api/library')) {
         const route = url.pathname.slice('/api/library'.length);
-        if (req.method === 'GET' && route === '/status') return send(res, { mode: 'disk', label: 'library/', collectionImported: settings().collectionImported });
+        if (req.method === 'GET' && route === '/status') return send(res, { mode: 'disk', label: `${path.basename(libraryRoot)}/`, collectionImported: settings().collectionImported, config: publicConfig(config) });
         if (req.method === 'GET' && route === '/documents') return send(res, list());
         if (req.method === 'GET' && route === '/duplicate') return send(res, list().find(doc => doc.format === url.searchParams.get('format') && doc.originalHash === url.searchParams.get('hash')) ?? null);
         if (req.method === 'GET' && route === '/collection') return send(res, fs.readdirSync(collection).filter(name => supported.test(name) && fs.statSync(path.join(collection, name)).isFile()).map(name => ({ name, size: fs.statSync(path.join(collection, name)).size, url: `/api/library/collection-file?name=${encodeURIComponent(name)}` })));
@@ -101,30 +102,30 @@ function createLibraryServer({ libraryRoot = path.resolve(__dirname, '../library
           if (path.basename(name) !== name || name.includes('\\') || !supported.test(name)) fail(400, '文件路徑無效。');
           const file = path.join(collection, name);
           const stat = fs.lstatSync(file);
-          if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 20 * 1024 * 1024) fail(400, '來源不是可匯入的文件。');
+          if (!stat.isFile() || stat.isSymbolicLink() || stat.size > (/\.(md|markdown|txt)$/i.test(name) ? config.limits.textMiB : config.limits.documentMiB) * 1024 * 1024) fail(400, '來源不是可匯入的文件。');
           res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Cache-Control': 'no-store' });
           return fs.createReadStream(file).pipe(res);
         }
         if (req.method === 'GET' && route === '/settings') return send(res, settings());
         if (req.method === 'PUT' && route === '/settings') {
-          const value = await readBody(req);
+          const value = await readBody(req, config);
           const previous = settings();
-          if (value.fontSize !== undefined && (!Number.isFinite(value.fontSize) || value.fontSize < 14 || value.fontSize > 28)) fail(400, '閱讀字級無效。');
+          if (value.fontSize !== undefined && (!Number.isFinite(value.fontSize) || !config.reading.fontSizes.includes(value.fontSize))) fail(400, '閱讀字級無效。');
           writeJSON(settingsFile, { ...previous, ...(value.fontSize !== undefined ? { fontSize: value.fontSize } : {}), ...(value.collectionImported === true ? { collectionImported: true } : {}) });
           return send(res, { saved: true });
         }
         if (req.method === 'POST' && route === '/documents') {
-          const input = await readBody(req);
+          const input = await readBody(req, config);
           const { originalBase64, originalType, revisions, ...doc } = input;
-          if (!uuid.test(doc.id) || !extensions[doc.format] || typeof originalBase64 !== 'string' || typeof doc.title !== 'string' || typeof doc.filename !== 'string' || !Array.isArray(doc.sections) || !Array.isArray(doc.sheets) || !Array.isArray(revisions) || !revisions.length || revisions.length > 10000) fail(400, '文件資料格式錯誤。');
+          if (!uuid.test(doc.id) || !extensions[doc.format] || typeof originalBase64 !== 'string' || typeof doc.title !== 'string' || typeof doc.filename !== 'string' || !Array.isArray(doc.sections) || !Array.isArray(doc.sheets) || !Array.isArray(revisions) || !revisions.length || revisions.length > config.limits.revisionCount) fail(400, '文件資料格式錯誤。');
           const source = Buffer.from(originalBase64, 'base64');
-          const max = ['markdown', 'text'].includes(doc.format) ? 5 : 20;
+          const max = ['markdown', 'text'].includes(doc.format) ? config.limits.textMiB : config.limits.documentMiB;
           if (!source.length || source.length > max * 1024 * 1024 || hash(source) !== doc.originalHash) fail(400, '原始檔大小或完整性驗證失敗。');
           if (toHex(await computeGenesisSAI(doc.actor, fromHex(doc.salt))) !== doc.genesis) fail(400, 'VAX genesis 驗證失敗。');
           let parent = null;
           const ids = new Set();
           for (const revision of revisions) {
-            await validateRevision(doc, revision, parent);
+            await validateRevision(doc, revision, parent, config);
             if (ids.has(revision.id) || (revision.kind === 'restore' && !ids.has(JSON.parse(revision.envelope).sdto.restoredFrom))) fail(400, '版本 ID 或還原來源無效。');
             ids.add(revision.id); parent = revision;
           }
@@ -149,11 +150,11 @@ function createLibraryServer({ libraryRoot = path.resolve(__dirname, '../library
             return send(res, { deleted: true });
           }
           if (req.method === 'POST' && action === 'revisions') {
-            const { expectedHead, revision } = await readBody(req);
+            const { expectedHead, revision } = await readBody(req, config);
             const previous = record(id);
             if (previous.revisionIds.at(-1) !== expectedHead) fail(409, '文件已在另一個分頁修改。請重新載入；未保存的文字仍保留在編輯器中。');
             const parent = version(id, expectedHead);
-            await validateRevision(previous.document, revision, parent);
+            await validateRevision(previous.document, revision, parent, config);
             if (previous.revisionIds.includes(revision.id) || (revision.kind === 'restore' && !previous.revisionIds.includes(JSON.parse(revision.envelope).sdto.restoredFrom))) fail(400, '版本 ID 或還原來源無效。');
             const fresh = record(id);
             if (fresh.revisionIds.at(-1) !== expectedHead) fail(409, '文件已在另一個分頁修改。請重新載入；未保存的文字仍保留在編輯器中。');
@@ -165,7 +166,7 @@ function createLibraryServer({ libraryRoot = path.resolve(__dirname, '../library
             return send(res, serialize(fresh));
           }
           if (req.method === 'PUT' && action === 'progress') {
-            const position = await readBody(req);
+            const position = await readBody(req, config);
             const item = record(id);
             if (item.revisionIds.at(-1) !== position.revisionId) fail(409, '文件版本已更新，未保存舊進度。');
             if (!Number.isFinite(position.percentage) || !Number.isFinite(position.ratio) || !Number.isInteger(position.section) || position.section < 0 || typeof position.block !== 'string') fail(400, '閱讀位置無效。');
@@ -210,9 +211,10 @@ function createLibraryServer({ libraryRoot = path.resolve(__dirname, '../library
 
 module.exports = { createLibraryServer };
 if (require.main === module) {
-  const devPort = process.argv.includes('--dev') ? 3001 : null;
-  const port = Number(process.env.PAGEFORGE_PORT ?? 3000);
-  const server = createLibraryServer({ libraryRoot: process.env.PAGEFORGE_LIBRARY_ROOT, devPort });
-  server.listen(port, '127.0.0.1', () => console.log(`Pageforge http://localhost:${port} · ${path.resolve(process.env.PAGEFORGE_LIBRARY_ROOT ?? 'library')}`));
+  const config = loadConfig();
+  const devPort = process.argv.includes('--dev') ? config.server.devPort : null;
+  const port = config.server.port;
+  const server = createLibraryServer({ config, devPort });
+  server.listen(port, '127.0.0.1', () => console.log(`Pageforge http://localhost:${port} · ${config.paths.libraryRoot}`));
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close(() => process.exit(0)));
 }

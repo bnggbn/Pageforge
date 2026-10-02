@@ -81,3 +81,9 @@ Desktop 與 Mobile 尚未串接本次 Web 文件能力。登入畫面仍是雛�
 - [待辦與已知限制](docs/spec/ISSUES.md)
 
 預計採 MIT 授權，正式授權文件與著作權資訊待補。
+
+## 設定
+
+路徑、連接埠、容量限制、字級與 diff 設定集中在 `pageforge.config.json`。
+本機覆寫與環境變數用法見 [設定說明](docs/CONFIGURATION.md)。
+可執行 `npm run config:check` 查看實際設定。

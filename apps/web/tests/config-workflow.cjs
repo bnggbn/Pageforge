@@ -1,0 +1,58 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const assert = require('node:assert/strict');
+const { randomUUID } = require('node:crypto');
+const { chromium } = require('playwright');
+const { loadConfig } = require('../../../scripts/config.cjs');
+const { createLibraryServer } = require('../../../scripts/library-server.cjs');
+process.chdir(path.resolve(__dirname, '../../..'));
+(async () => {
+  const root = path.resolve('.preview/config-tests', randomUUID());
+  fs.mkdirSync(root, { recursive: true });
+  const localFile = path.join(root, 'override.json');
+  const write = value => fs.writeFileSync(localFile, JSON.stringify(value));
+  write({ server: { port: 3100, devPort: 3101 }, paths: { libraryRoot: root }, limits: { textMiB: 1, noteCharacters: 12 }, reading: { defaultFontSize: 20, fontSizes: [16, 20, 24] } });
+  const config = loadConfig({ localFile, env: { PAGEFORGE_PORT: '3200' } });
+  assert.equal(config.server.port, 3200);
+  assert.equal(config.server.devPort, 3101);
+  assert.equal(config.limits.documentMiB, 20);
+  assert.throws(() => loadConfig({ localFile, env: { PAGEFORGE_PORT: 'abc' } }), /server.port/);
+  write({ server: { port: 3001 } });
+  assert.throws(() => loadConfig({ localFile, env: {} }), /連接埠/);
+  write({ limits: { typo: 1 } });
+  assert.throws(() => loadConfig({ localFile, env: {} }), /未知設定/);
+  write({ reading: { defaultFontSize: 19 } });
+  assert.throws(() => loadConfig({ localFile, env: {} }), /字級/);
+  write({ limits: { requestMiB: 1 } });
+  assert.throws(() => loadConfig({ localFile, env: {} }), /容量設定/);
+  const server = createLibraryServer({ config });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  const url = `http://127.0.0.1:${server.address().port}`;
+  let browser;
+  try {
+    const status = await (await fetch(url + '/api/library/status')).json();
+    assert.equal(status.config.limits.textMiB, 1);
+    assert.equal(status.config.reading.defaultFontSize, 20);
+    assert.equal(status.config.paths, undefined);
+    assert.equal((await (await fetch(url + '/api/library/settings')).json()).fontSize, 20);
+    assert.equal((await fetch(url + '/api/library/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: '{"fontSize":18}' })).status, 400);
+    browser = await chromium.launch({ channel: process.env.PAGEFORGE_BROWSER_CHANNEL || (process.platform === 'win32' ? 'msedge' : undefined), headless: true });
+    const page = await browser.newPage();
+    await page.goto(url);
+    await page.locator('.folder-bar').waitFor();
+    assert.ok((await page.locator('.folder-bar').innerText()).includes(path.basename(root)));
+    await page.getByRole('button', { name: '匯入第一份文件', exact: false }).click();
+    assert.match(await page.locator('.import-placeholder').innerText(), /TXT: 1 MiB/);
+    await page.locator('input[type=file]').setInputFiles({ name: 'too-large.txt', mimeType: 'text/plain', buffer: Buffer.alloc(1024 * 1024 + 1, 65) });
+    await page.getByRole('dialog').getByRole('alert').filter({ hasText: '1 MiB' }).waitFor();
+    await page.locator('input[type=file]').setInputFiles({ name: 'configured.txt', mimeType: 'text/plain', buffer: Buffer.from('Configured document') });
+    await page.getByRole('button', { name: '版本紀錄', exact: true }).waitFor();
+    assert.equal(await page.getByLabel('閱讀字級').inputValue(), '20');
+    assert.deepEqual(await page.getByLabel('閱讀字級').locator('option').allTextContents(), ['16', '20', '24']);
+    assert.equal(await page.getByLabel('新增筆記').getAttribute('maxlength'), '12');
+    console.log('PASS configuration precedence, validation and runtime browser settings');
+  } finally {
+    if (browser) await browser.close();
+    await new Promise(resolve => server.close(resolve));
+  }
+})().catch(error => { console.error(error); process.exitCode = 1; });
