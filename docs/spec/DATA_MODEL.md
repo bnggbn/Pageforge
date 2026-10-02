@@ -2,6 +2,10 @@
 
 目前實作位於 `apps/web/lib/`，固定資料夾服務在 `scripts/library-server.cjs`。預設使用硬碟書架，單獨靜態部署使用 IndexedDB `pageforge-library`（schema version 1）作為另一種模式。
 
+後續 Hash／DAG、Fork／Adopt、Temp Branch、雲端內容定址儲存與獨立會話鏈，見
+[Local-First 架構提案](LOCAL_FIRST_ARCHITECTURE.md)。提案中的節點欄位尚未取代以下實作；
+正式導入前需另定資料 schema、舊版本遷移、主線 head 比對與同步合約。
+
 ## 固定資料夾儲存
 
 `library/books/{id}/original.{ext}` 保存原始位元組；`versions/{revision-id}.json` 保存不可覆寫的版本快照。`manifest.json` 是原子更新的版本順序、文件投影與進度紀錄。寫入使用暫存檔、fsync 與 rename；版本快照先寫入，成功切換 manifest 才對讀取者可見。失敗可能留下未引用的版本／暫存檔，但不會顯示保存成功或改動有效 head。
