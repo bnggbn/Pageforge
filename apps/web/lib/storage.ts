@@ -1,111 +1,118 @@
-import { latest, summary, type DocumentSummary, type LibraryDocument, type ReadingPosition, type Revision } from './documents'
+﻿import * as browser from './indexed-storage'
+import type { DocumentSummary, LibraryDocument, ReadingPosition, Revision } from './documents'
+import { latest } from './documents'
 
-let opening: Promise<IDBDatabase> | null = null
-export const changeSource = crypto.randomUUID()
-export function database(): Promise<IDBDatabase> {
-  if (opening) return opening
-  opening = new Promise<IDBDatabase>((resolve, reject) => {
-    if (!globalThis.indexedDB) { reject(new Error('此瀏覽器無法使用本機儲存。')); return }
-    const request = indexedDB.open('pageforge-library', 1)
-    request.onupgradeneeded = () => {
-      const db = request.result
-      db.createObjectStore('documents', { keyPath: 'id' })
-      const meta = db.createObjectStore('summaries', { keyPath: 'id' })
-      meta.createIndex('source', ['format', 'originalHash'], { unique: true })
-      db.createObjectStore('progress', { keyPath: 'documentId' })
-      db.createObjectStore('settings')
-    }
-    request.onblocked = () => { reject(new Error('請關閉其他 Pageforge 分頁後再試。')) }
-    request.onerror = () => reject(request.error)
-    request.onsuccess = () => {
-      const db = request.result
-      db.onversionchange = () => { db.close(); opening = null }
-      resolve(db)
-    }
-  }).catch(error => { opening = null; throw error })
-  return opening
+export { database, changeSource, announce } from './indexed-storage'
+export interface StorageInfo { mode: 'disk' | 'browser'; label: string; collectionImported: boolean }
+let storage: Promise<StorageInfo> | null = null
+export function storageInfo(): Promise<StorageInfo> {
+  if (!storage) storage = (async () => {
+    let response: Response
+    try { response = await fetch('/api/library/status', { cache: 'no-store' }) }
+    catch { throw new Error('無法連線到本機書架服務，請確認 Pageforge 正在執行。') }
+    if (response.status === 404) return { mode: 'browser' as const, label: '瀏覽器儲存', collectionImported: true }
+    if (!response.ok) throw new Error('本機書架服务無法使用，資料未切換到其他位置。')
+    const info = await response.json()
+    if (info.mode !== 'disk') throw new Error('書架服務回傳不支援的儲存模式。')
+    return info as StorageInfo
+  })().catch(error => { storage = null; throw error })
+  return storage
 }
-function result<T>(request: IDBRequest<T>): Promise<T> { return new Promise((resolve, reject) => { request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error) }) }
-function completed(transaction: IDBTransaction): Promise<void> { return new Promise((resolve, reject) => { transaction.oncomplete = () => resolve(); transaction.onerror = () => reject(transaction.error ?? new Error('資料無法保存。')); transaction.onabort = () => reject(transaction.error ?? new Error('資料保存已取消。')) }) }
+async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T> {
+  let response: Response
+  try { response = await fetch(`/api/library${route}`, { method, cache:'no-store', ...(data !== undefined ? { headers:{ 'Content-Type':'application/json' }, body:JSON.stringify(data) } : {}) }) }
+  catch { throw new Error('無法連線到本機書架，資料尚未保存。請重新啟動 Pageforge 後再試。') }
+  const value = await response.json()
+  if (!response.ok) {
+    if (response.status === 409 && method === 'POST' && route === '/documents') throw new DOMException(value.error, 'ConstraintError')
+    throw new Error(value.error ?? '本機書架操作失敗。')
+  }
+  return value as T
+}
+async function encode(doc: LibraryDocument) {
+  const bytes = new Uint8Array(await doc.original.arrayBuffer())
+  let binary = ''
+  for (let index=0; index<bytes.length; index+=8192) binary += String.fromCharCode(...bytes.subarray(index,index+8192))
+  const { original, ...data } = doc
+  return { ...data, originalBase64:btoa(binary), originalType:original.type }
+}
+function decode(data: LibraryDocument & { originalBase64:string; originalType:string }): LibraryDocument {
+  const { originalBase64, originalType, ...doc } = data
+  const binary = atob(originalBase64)
+  const bytes = new Uint8Array(binary.length)
+  for (let index=0; index<binary.length; index++) bytes[index] = binary.charCodeAt(index)
+  return { ...doc, original:new Blob([bytes],{type:originalType}) }
+}
 export async function listDocuments(): Promise<DocumentSummary[]> {
-  const db = await database()
-  return result(db.transaction('summaries').objectStore('summaries').getAll())
+  return (await storageInfo()).mode === 'disk' ? api('/documents') : browser.listDocuments()
 }
 export async function loadDocument(id: string): Promise<LibraryDocument | undefined> {
-  const db = await database()
-  return result(db.transaction('documents').objectStore('documents').get(id))
+  if ((await storageInfo()).mode !== 'disk') return browser.loadDocument(id)
+  return decode(await api(`/documents/${encodeURIComponent(id)}`))
 }
 export async function findDuplicate(format: string, hash: string): Promise<DocumentSummary | undefined> {
-  const db = await database()
-  return result(db.transaction('summaries').objectStore('summaries').index('source').get([format, hash]))
+  return (await storageInfo()).mode === 'disk' ? (await api<DocumentSummary | null>(`/duplicate?format=${encodeURIComponent(format)}&hash=${encodeURIComponent(hash)}`)) ?? undefined : browser.findDuplicate(format, hash)
 }
 export async function insertDocument(doc: LibraryDocument): Promise<void> {
-  const db = await database()
-  const tx = db.transaction(['documents', 'summaries'], 'readwrite')
-  const done = completed(tx)
-  tx.objectStore('documents').add(doc)
-  tx.objectStore('summaries').add(summary(doc))
-  await done
+  if ((await storageInfo()).mode !== 'disk') return browser.insertDocument(doc)
+  await api('/documents','POST',await encode(doc))
 }
 export async function appendRevision(id: string, expectedHead: string, revision: Revision): Promise<LibraryDocument> {
-  const db = await database()
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(['documents', 'summaries', 'progress'], 'readwrite')
-    let updated: LibraryDocument
-    let failure: Error | null = null
-    const req = tx.objectStore('documents').get(id)
-    req.onsuccess = () => {
-      const doc: LibraryDocument | undefined = req.result
-      if (!doc || latest(doc).id !== expectedHead || revision.parentId !== expectedHead || revision.prevSAI !== latest(doc).sai) { failure = new Error('文件已在另一個分頁修改或刪除。請重新載入；未保存的文字仍保留在編輯器中。'); tx.abort(); return }
-      updated = { ...doc, updatedAt: revision.createdAt, revisions: [...doc.revisions, revision] }
-      const changedContent = latest(doc).content !== revision.content
-      tx.objectStore('documents').put(updated)
-      const metaReq = tx.objectStore('summaries').get(id)
-      metaReq.onsuccess = () => tx.objectStore('summaries').put(summary(updated, changedContent ? 0 : (metaReq.result?.progress ?? 0)))
-      if (changedContent) tx.objectStore('progress').delete(id)
-    }
-    tx.oncomplete = () => { announce(); resolve(updated) }
-    tx.onerror = () => reject(tx.error ?? new Error('版本保存失敗。'))
-    tx.onabort = () => reject(failure ?? tx.error ?? new Error('版本保存失敗。'))
-  })
+  if ((await storageInfo()).mode !== 'disk') return browser.appendRevision(id,expectedHead,revision)
+  const updated = decode(await api(`/documents/${encodeURIComponent(id)}/revisions`,'POST',{expectedHead,revision}))
+  browser.announce()
+  return updated
 }
 export async function deleteDocument(id: string): Promise<void> {
-  const db = await database()
-  const tx = db.transaction(['documents', 'summaries', 'progress'], 'readwrite')
-  const done = completed(tx)
-  for (const name of ['documents', 'summaries', 'progress']) tx.objectStore(name).delete(id)
-  await done
-  announce()
+  if ((await storageInfo()).mode !== 'disk') return browser.deleteDocument(id)
+  await api(`/documents/${encodeURIComponent(id)}`,'DELETE')
+  browser.announce()
 }
 export async function readProgress(id: string): Promise<ReadingPosition | undefined> {
-  const db = await database()
-  return result(db.transaction('progress').objectStore('progress').get(id))
+  return (await storageInfo()).mode === 'disk' ? (await api<ReadingPosition | null>(`/documents/${encodeURIComponent(id)}/progress`)) ?? undefined : browser.readProgress(id)
 }
 export async function saveProgress(id: string, position: ReadingPosition): Promise<void> {
-  const db = await database()
-  const tx = db.transaction(['summaries', 'progress'], 'readwrite')
-  const done = completed(tx)
-  const req = tx.objectStore('summaries').get(id)
-  req.onsuccess = () => {
-    const meta: DocumentSummary | undefined = req.result
-    if (!meta || meta.head !== position.revisionId) { tx.abort(); return }
-    tx.objectStore('progress').put({ ...position, percentage: Math.max(0, Math.min(100, position.percentage)), documentId: id })
-    tx.objectStore('summaries').put({ ...meta, progress: position.percentage })
-  }
-  await done
+  if ((await storageInfo()).mode !== 'disk') return browser.saveProgress(id,position)
+  await api(`/documents/${encodeURIComponent(id)}/progress`,'PUT',position)
 }
 export async function readFontSize(): Promise<number> {
-  const db = await database()
-  const size = await result(db.transaction('settings').objectStore('settings').get('fontSize'))
-  return typeof size === 'number' && size >= 14 && size <= 28 ? size : 18
+  return (await storageInfo()).mode === 'disk' ? (await api<{fontSize:number}>('/settings')).fontSize : browser.readFontSize()
 }
-export async function saveFontSize(size: number) {
-  const db = await database()
-  const tx = db.transaction('settings', 'readwrite')
-  const done = completed(tx)
-  tx.objectStore('settings').put(size, 'fontSize')
-  await done
+export async function saveFontSize(size: number): Promise<void> {
+  if ((await storageInfo()).mode !== 'disk') return browser.saveFontSize(size)
+  await api('/settings','PUT',{fontSize:size})
 }
-export function announce() {
-  if (typeof BroadcastChannel !== 'undefined') { const channel = new BroadcastChannel('pageforge-library'); channel.postMessage({ source: changeSource }); channel.close() }
+export async function collectionFiles(): Promise<{ name:string; size:number; url:string }[]> { return api('/collection') }
+export async function markCollectionImported(): Promise<void> {
+  await api('/settings','PUT',{collectionImported:true})
+  const info = await storageInfo(); info.collectionImported=true
+}
+export async function browserDocumentCount(): Promise<number> { return (await browser.listDocuments()).length }
+export async function migrateBrowserDocuments(): Promise<{ imported:number; skipped:number; conflicts:string[] }> {
+  if ((await storageInfo()).mode !== 'disk') throw new Error('請使用 npm run dev:web 或 npm run start:web 啟動固定資料夾書架。')
+  const { verifyHistory } = await import('./history')
+  const summaries = await browser.listDocuments()
+  let imported=0,skipped=0
+  const conflicts: string[] = []
+  for (const item of summaries) {
+    const doc = await browser.loadDocument(item.id)
+    if (!doc) continue
+    await verifyHistory(doc)
+    const duplicate = await findDuplicate(doc.format,doc.originalHash)
+    if (duplicate) {
+      const stored = await loadDocument(duplicate.id)
+      if (stored && doc.revisions.every((revision,index)=>stored.revisions[index]?.sai === revision.sai)) skipped++
+      else conflicts.push(doc.title)
+      continue
+    }
+    try { await insertDocument(doc) } catch(error) {
+      if (error instanceof DOMException && error.name === 'ConstraintError') {skipped++;continue}
+      throw error
+    }
+    const position = await browser.readProgress(doc.id)
+    if (position && doc.revisions.find(r=>r.id===position.revisionId)?.content === latest(doc).content) await saveProgress(doc.id,{...position,revisionId:latest(doc).id})
+    imported++
+  }
+  browser.announce()
+  return {imported,skipped,conflicts}
 }

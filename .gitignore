@@ -36,3 +36,14 @@ npm-debug.log*
 
 # Local design previews
 .preview/
+
+# Private library state and user files
+/library/books/
+/library/.pageforge/
+/library/.trash/
+/library/collection/*
+!/library/collection/01-Pageforge閱讀指南.md
+!/library/collection/02-版本管理設計.md
+!/library/collection/03-格式支援與驗收.md
+!/library/collection/04-閱讀札記.txt
+*.tsbuildinfo
