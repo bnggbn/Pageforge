@@ -87,3 +87,10 @@ Desktop 與 Mobile 尚未串接本次 Web 文件能力。登入畫面仍是雛�
 路徑、連接埠、容量限制、字級與 diff 設定集中在 `pageforge.config.json`。
 本機覆寫與環境變數用法見 [設定說明](docs/CONFIGURATION.md)。
 可執行 `npm run config:check` 查看實際設定。
+
+## 程式碼與圖片
+
+`npm run format` 整理縮排，`npm run format:check` 檢查格式。
+Markdown 本機圖片可放在 `library/collection/assets/`，使用相對路徑引用。
+支援 PNG、JPEG、GIF、WebP；遠端圖片不自動載入。
+模組分工、效能改善與圖片限制見 [架構說明](docs/ARCHITECTURE.md)。

@@ -11,25 +11,20 @@ export function PageRenderer({ children }: RenderModeProps) {
     if (!containerRef.current) return
     const h = containerRef.current.clientHeight
     containerRef.current.scrollBy({ top: h, behavior: 'smooth' })
-    setPage(p => p + 1)
+    setPage((p) => p + 1)
   }
 
   const goPrev = () => {
     if (!containerRef.current) return
     const h = containerRef.current.clientHeight
     containerRef.current.scrollBy({ top: -h, behavior: 'smooth' })
-    setPage(p => Math.max(0, p - 1))
+    setPage((p) => Math.max(0, p - 1))
   }
 
   return (
     <div className="relative h-full flex flex-col">
-      <div
-        ref={containerRef}
-        className="flex-1 overflow-hidden"
-      >
-        <div className="max-w-prose mx-auto px-6 py-8">
-          {children}
-        </div>
+      <div ref={containerRef} className="flex-1 overflow-hidden">
+        <div className="max-w-prose mx-auto px-6 py-8">{children}</div>
       </div>
 
       {/* 翻頁控制 */}

@@ -1,0 +1,47 @@
+# Pageforge 的模組分工與效能
+
+Web 畫面透過 `lib/storage.ts` 使用儲存介面：本機服務模式連接 HTTP API，
+純靜態模式使用 `indexed-storage.ts`。匯入器與閱讀器不直接操作資料夾。
+共用限制由設定檔提供，本機覆寫由服務在執行時傳給前端。
+
+## 閱讀與版本
+
+- `ReaderWorkspace` 協調閱讀與保存；`NotesPanel` 和 `RevisionHistory` 分別管理筆記與版本畫面。
+- `DocumentContent` 負責文字排版，使用 React memo；筆記輸入與進度更新不重新解析 Markdown。
+- `reading-anchor.ts` 負責段落定位；保留段落節點清單，捲動定位採二分查找，降低 DOM 量測次數。
+- `useRevisionDiff` 管理背景工作與結果生命週期；diff 在 Web Worker 執行，切換比較或離開時取消舊工作，避免舊結果覆蓋新選擇。
+- 保存新版的前端請求使用增量回應，只接收已保存版本；保留已載入的原始檔，不重傳二進位與全部歷史。重新開啟仍完整載入並驗證歷史。
+- `history.ts` 負責前端 VAX 建立與驗證；`scripts/library/revisions.cjs` 負責服務端保存前的驗證。
+- `scripts/library-server.cjs` 協調 HTTP 路由、資料夾保存與開發代理；圖片處理由 `scripts/library/images.cjs` 負責。
+
+原始檔、版本、筆記與進度的現有保存方式與 VAX 協定保持相容。
+
+## 本機圖片
+
+Markdown 使用 `![說明](assets/example.png)`，圖片放在
+`library/collection/assets/example.png`。可使用子資料夾，支援 PNG、JPEG、GIF、WebP。
+圖片路徑以書架 collection 根目錄為準，匯入單一 Markdown 不會自動複製旁邊的圖片。
+請把相依圖片一併放進 collection。純靜態瀏覽器模式沒有這個圖片服務。
+
+前端只產生同源的圖片 API URL。服務拒絕外部 URL、絕對路徑、上層路徑、連結檔、
+SVG 與不符合點陣圖片檔頭的內容，並套用 `limits.imageMiB` 容量限制。
+採延遲載入、非同步解碼、不傳 Referer，載入失敗保留圖片說明。
+檔頭檢查與瀏覽器解碼各自負責格式辨識與顯示；不將圖片當作 HTML 執行。
+遠端圖片不自動請求，EPUB 仍維持純文字閱讀模式。
+
+目前圖片是 collection 中的即時資源，尚未納入 VAX 快照；改圖不會改變文字版本。
+備份時必須包含 collection。下一階段可加入內容雜湊資產庫，讓圖片隨版本固定。
+
+## 後續效能工作
+
+這次改善了可直接驗證的重複解析、捲動定位與同步 diff。
+尚待量測的部分包括大型 Excel 的 DOM 數量、全歷史快照下載、
+以及本機服務的同步磁碟操作。
+適合依實際大檔測試，再加入虛擬表格、分頁載入版本、增量保存回應與非同步儲存層。
+未提供端到端速度提升百分比；段落定位測試以 10,000 個節點驗證每次至多 15 次量測。
+
+## 格式化
+
+`npm run format` 整理 apps 與 scripts 的程式碼；`npm run format:check` 檢查。
+使用兩格縮排、100 欄目標寬度。格式工具不拆字串內容，避免改變文案或協定。
+產出目錄、測試暫存、書籍與 lockfile 不列入格式化。

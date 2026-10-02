@@ -6,11 +6,7 @@ export const metadata: Metadata = {
   description: 'Pageforge — Document Platform',
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="zh-TW">
       <body className="antialiased">{children}</body>

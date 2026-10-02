@@ -2,12 +2,27 @@
   "server": { "port": 3000, "devPort": 3001 },
   "paths": { "libraryRoot": "library", "webRoot": "apps/web/out" },
   "limits": {
-    "textMiB": 5, "documentMiB": 20, "requestMiB": 128,
-    "snapshotNotesMiB": 5, "revisionCount": 10000,
-    "archiveMiB": 40, "archiveEntryMiB": 15, "archiveEntries": 2000,
-    "sheetRows": 10000, "sheetColumns": 200, "sheetCells": 100000,
-    "noteCharacters": 10000, "quoteCharacters": 2000, "locationCharacters": 300
+    "textMiB": 5,
+    "documentMiB": 20,
+    "requestMiB": 128,
+    "imageMiB": 8,
+    "snapshotNotesMiB": 5,
+    "revisionCount": 10000,
+    "archiveMiB": 40,
+    "archiveEntryMiB": 15,
+    "archiveEntries": 2000,
+    "sheetRows": 10000,
+    "sheetColumns": 200,
+    "sheetCells": 100000,
+    "noteCharacters": 10000,
+    "quoteCharacters": 2000,
+    "locationCharacters": 300
   },
-  "reading": { "defaultFontSize": 18, "fontSizes": [14, 16, 18, 20, 24, 28], "progressDebounceMs": 450, "pdfMaxPage": 100000 },
+  "reading": {
+    "defaultFontSize": 18,
+    "fontSizes": [14, 16, 18, 20, 24, 28],
+    "progressDebounceMs": 450,
+    "pdfMaxPage": 100000
+  },
   "diff": { "maxCharacters": 1048576, "timeoutMs": 800, "maxEditLength": 10000 }
 }

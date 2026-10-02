@@ -16,11 +16,14 @@
     "build:web": "npm run build -w apps/web",
     "build:desktop": "npm run build -w apps/desktop",
     "build:all": "npm run build:web && npm run build:desktop",
-    "test:web": "npm run build:web && node apps/web/tests/workflow.cjs && node apps/web/tests/folder-workflow.cjs && node apps/web/tests/config-workflow.cjs",
+    "test:web": "npm run build:web && node apps/web/tests/workflow.cjs && node apps/web/tests/folder-workflow.cjs && node apps/web/tests/config-workflow.cjs && node apps/web/tests/images-workflow.cjs",
     "start:web": "node scripts/library-server.cjs",
-    "config:check": "node -e \"console.log(require('./scripts/config.cjs').loadConfig())\""
+    "config:check": "node -e \"console.log(require('./scripts/config.cjs').loadConfig())\"",
+    "format": "prettier --write apps scripts pageforge.config*.json package.json .prettierrc.json",
+    "format:check": "prettier --check apps scripts pageforge.config*.json package.json .prettierrc.json"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "prettier": "3.9.9"
   }
 }
