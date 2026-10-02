@@ -1,0 +1,24 @@
+appId: com.pageforge.desktop
+productName: Pageforge
+
+directories:
+  output: release
+
+files:
+  - dist/**/*
+  - renderer/**/*
+  - package.json
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - dmg
+    - zip
+
+win:
+  target:
+    - nsis
+
+linux:
+  target:
+    - AppImage

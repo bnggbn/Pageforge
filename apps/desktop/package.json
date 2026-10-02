@@ -1,0 +1,20 @@
+{
+  "name": "@pageforge/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/main.js",
+  "scripts": {
+    "compile": "tsc",
+    "dev": "npm run compile && cross-env NODE_ENV=development electron .",
+    "build": "npm run compile && node scripts/copy-renderer.js && electron-builder",
+    "pack": "npm run compile && node scripts/copy-renderer.js && electron-builder --dir"
+  },
+  "dependencies": {
+    "electron": "^34.0.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5"
+  }
+}

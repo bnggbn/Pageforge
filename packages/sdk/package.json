@@ -1,0 +1,8 @@
+{
+  "name": "@pageforge/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "vax-sdk": "1.0.0"
+  }
+}

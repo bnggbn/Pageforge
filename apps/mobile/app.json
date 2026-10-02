@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "Pageforge",
+    "slug": "pageforge",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "pageforge",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pageforge.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.pageforge.mobile"
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

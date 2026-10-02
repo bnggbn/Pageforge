@@ -1,0 +1,38 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js (web)
+apps/web/.next/
+apps/web/out/
+
+# Electron (desktop)
+apps/desktop/dist/
+apps/desktop/renderer/
+apps/desktop/release/
+
+# Expo (mobile)
+apps/mobile/.expo/
+apps/mobile/dist/
+
+# Build outputs
+dist/
+build/
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# Local design previews
+.preview/
