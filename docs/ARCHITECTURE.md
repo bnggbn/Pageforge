@@ -35,6 +35,20 @@ Web 畫面透過 `lib/storage.ts` 使用儲存介面：本機服務模式連接 
 
 原始檔、版本、筆記與進度的現有保存方式與 VAX 協定保持相容。
 
+## Web 樣式
+
+組件使用 Tailwind utilities，短樣式直接寫在 JSX；較長的組合以靜態字串分段，
+放在同一個 TSX 檔案。`app/globals.css` 只管理主題色、字型、斷點與基礎樣式。
+共用主要按鈕由 `components/ui/PrimaryButton.tsx` 管理，尺寸透過明確的 variant 選擇。
+`DocumentProse` 集中管理閱讀文章的排版，子元素樣式限制在文章範圍。
+
+封面等動態樣式使用完整 class 字串的對照表，讓 Tailwind 能在建置時辨識；
+來自文件的封面顏色、閱讀字級與進度仍透過 inline style 傳入。
+保留的語意 class 用於測試與組件內選取，沒有對應的全域組件 CSS。
+調整響應式或互動狀態時，同時確認桌面與手機的閱讀、筆記、編輯和版本畫面。
+
+參考：[Tailwind utility classes](https://tailwindcss.com/docs/styling-with-utility-classes)。
+
 ## 本機圖片
 
 Markdown 使用 `![說明](assets/example.png)`，圖片放在

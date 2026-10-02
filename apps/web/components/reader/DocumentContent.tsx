@@ -14,7 +14,16 @@ const components: Components = {
     ) : (
       <span>{children}</span>
     ),
-  img: ({ alt }) => <span className="omitted-image">[圖片：{alt || '不載入遠端圖片'}]</span>,
+  img: ({ alt }) => (
+    <span
+      className={[
+        'omitted-image text-muted text-[0.8em] border border-dashed border-line p-2',
+        'inline-block',
+      ].join(' ')}
+    >
+      [圖片：{alt || '不載入遠端圖片'}]
+    </span>
+  ),
   h1: ({ node, children }) => <h1 data-block={`line-${node?.position?.start.line}`}>{children}</h1>,
   h2: ({ node, children }) => <h2 data-block={`line-${node?.position?.start.line}`}>{children}</h2>,
   h3: ({ node, children }) => <h3 data-block={`line-${node?.position?.start.line}`}>{children}</h3>,
@@ -31,7 +40,10 @@ const components: Components = {
     <blockquote data-block={`line-${node?.position?.start.line}`}>{children}</blockquote>
   ),
   table: ({ node, children }) => (
-    <div className="reader-table-wrap" data-block={`line-${node?.position?.start.line}`}>
+    <div
+      className="reader-table-wrap overflow-auto max-w-full my-5 mx-0"
+      data-block={`line-${node?.position?.start.line}`}
+    >
       <table>{children}</table>
     </div>
   ),
@@ -67,7 +79,11 @@ export const DocumentContent = memo(function DocumentContent({
   return (
     <>
       {text.split(/\n\s*\n/).map((block, index) => (
-        <p className="plain-paragraph" data-block={`block-${index}`} key={index}>
+        <p
+          className="plain-paragraph whitespace-pre-wrap"
+          data-block={`block-${index}`}
+          key={index}
+        >
           {block || '\u00a0'}
         </p>
       ))}

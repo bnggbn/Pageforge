@@ -1,5 +1,6 @@
 'use client'
 import { config } from '@/lib/config'
+import { PrimaryButton } from '@/components/ui/PrimaryButton'
 import { readingAnchor } from '@/lib/reading-anchor'
 
 import Link from 'next/link'
@@ -8,6 +9,7 @@ import { RevisionHistory } from './RevisionHistory'
 import { NotesPanel } from './NotesPanel'
 import { exportFile } from '@/lib/download'
 import { DocumentContent } from './DocumentContent'
+import { DocumentProse } from './DocumentProse'
 import {
   EDITABLE,
   FORMAT_LABELS,
@@ -352,14 +354,16 @@ export function ReaderWorkspace() {
 
   if (loading)
     return (
-      <main className="reader-loading">
-        <p className="eyebrow">PAGEFORGE READING ROOM</p>
+      <main className={styles.readerLoading}>
+        <p className="eyebrow text-[10px] tracking-[2px] font-semibold m-0 text-muted">
+          PAGEFORGE READING ROOM
+        </p>
         <h1>正在打開你的文字…</h1>
       </main>
     )
   if (!doc || !head || !verified)
     return (
-      <main className="reader-loading">
+      <main className={styles.readerLoading}>
         <h1>無法開啟文件</h1>
         <p role="alert">{error}</p>
         <Link href="/">回到書架 →</Link>
@@ -383,19 +387,45 @@ export function ReaderWorkspace() {
     }
   }
   return (
-    <div className="reader-workspace">
-      <header className="reader-header">
-        <button className="back-button" onClick={() => void returnToShelf()}>
+    <div
+      className={[
+        'reader-workspace min-h-[100dvh] max-w-375 m-auto pt-0 px-10 pb-7.5',
+        'max-lg:pt-0 max-lg:px-[25px] max-lg:pb-7.5',
+        'max-md:pt-0 max-md:px-5 max-md:pb-[25px]',
+      ].join(' ')}
+    >
+      <header className={styles.readerHeader}>
+        <button
+          className={
+            'back-button border-0 bg-transparent text-[12px] whitespace-nowrap py-2 px-0 text-muted'
+          }
+          onClick={() => void returnToShelf()}
+        >
           ← 書架
         </button>
         <div>
-          <p className="eyebrow">{FORMAT_LABELS[doc.format]} / PERSONAL READING ROOM</p>
+          <p className="eyebrow text-[10px] tracking-[2px] font-semibold m-0 text-muted">
+            {FORMAT_LABELS[doc.format]} / PERSONAL READING ROOM
+          </p>
           <h1>{doc.title}</h1>
         </div>
-        <span className="version-badge">第 {doc.revisions.length} 版</span>
+        <span
+          className={[
+            'version-badge text-[11px] py-1.5 px-2.5 border border-solid border-line rounded-[4px]',
+            'whitespace-nowrap text-muted',
+            'max-md:text-[9px] max-md:p-[5px]',
+          ].join(' ')}
+        >
+          第 {doc.revisions.length} 版
+        </span>
       </header>
-      <div className="reader-toolbar">
-        <div className="reader-tabs">
+      <div
+        className={[
+          'reader-toolbar flex justify-between items-center gap-4 border-b border-solid',
+          'border-b-line py-[5px] px-0 flex-wrap',
+        ].join(' ')}
+      >
+        <div className={styles.readerTabs}>
           {(
             [
               ['read', '閱讀'],
@@ -415,7 +445,7 @@ export function ReaderWorkspace() {
             </button>
           ))}
         </div>
-        <div className="reader-tools">
+        <div className={styles.readerTools}>
           <label>
             字級{' '}
             <select
@@ -444,7 +474,7 @@ export function ReaderWorkspace() {
             </button>
           )}
           <button
-            className="delete-action"
+            className="delete-action text-rust"
             disabled={busy}
             onClick={async () => {
               if (
@@ -470,9 +500,9 @@ export function ReaderWorkspace() {
         </div>
       </div>
       {(error || message || stale) && (
-        <div className="reader-status">
+        <div className={styles.readerStatus}>
           {error && (
-            <p role="alert" className="error">
+            <p role="alert" className="error text-[#a43c2e]">
               {error}
             </p>
           )}
@@ -511,20 +541,22 @@ export function ReaderWorkspace() {
           onRestore={(revision) => commit('restore', revision.content, revision.notes, revision.id)}
         />
       ) : tab === 'edit' ? (
-        <section className="editor-panel">
-          <div className="editor-heading">
+        <section className={styles.editorPanel}>
+          <div className={styles.editorHeading}>
             <div>
-              <p className="eyebrow">MAKE IT YOUR OWN</p>
+              <p className="eyebrow text-[10px] tracking-[2px] font-semibold m-0 text-muted">
+                MAKE IT YOUR OWN
+              </p>
               <h2>讓文字，往前一步。</h2>
               <p>每次儲存建立新版本，原文與筆記都會保留。</p>
             </div>
-            <button
-              className="primary-button"
+            <PrimaryButton
+              className="max-sm:mt-[27px]"
               disabled={busy || !dirty}
               onClick={() => void saveEdit()}
             >
               {busy ? '保存中…' : '儲存新版本'}
-            </button>
+            </PrimaryButton>
           </div>
           <textarea
             aria-label="編輯文件文字"
@@ -532,15 +564,21 @@ export function ReaderWorkspace() {
             onChange={(e) => setDraft(e.target.value)}
             spellCheck={false}
           />
-          <span className="small-note">
+          <span className="small-note text-[11px] text-muted leading-[1.8] my-2.5 mx-0">
             {dirty ? '有未儲存的修改' : '目前文字已保存'} · {draft.length.toLocaleString()} 字元
           </span>
         </section>
       ) : (
-        <div className={`reading-layout ${tab === 'notes' ? 'with-notes' : ''}`}>
-          <section className="reading-panel">
+        <div className={`${styles.readingLayout} ${tab === 'notes' ? styles.withNotes : ''}`}>
+          <section
+            className={[
+              'reading-panel min-w-0 border border-solid border-line bg-surface rounded-[7px]',
+              'overflow-hidden',
+              '[&_>_.small-note]:my-3 [&_>_.small-note]:mx-5',
+            ].join(' ')}
+          >
             {sections.length > 0 && (
-              <div className="section-selector">
+              <div className={styles.sectionSelector}>
                 <label>
                   {doc.format === 'epub' ? '章節' : '工作表'}
                   <select
@@ -559,7 +597,7 @@ export function ReaderWorkspace() {
             )}
             {doc.format === 'pdf' ? (
               <>
-                <div className="pdf-controls">
+                <div className={styles.pdfControls}>
                   <label>
                     頁碼書籤{' '}
                     <input
@@ -600,19 +638,18 @@ export function ReaderWorkspace() {
                   <span>PDF 捲動由瀏覽器管理；請手動保存頁碼。</span>
                 </div>
                 <iframe
-                  className="pdf-viewer"
+                  className="pdf-viewer w-full [height:calc(100dvh_-_330px)] min-h-100 border-0 bg-[#eeeeea]"
                   title={`${doc.title} PDF`}
                   src={pdfUrl ? `${pdfUrl}#page=${pdfPage}` : undefined}
                 />
-                <p className="small-note">
+                <p className="small-note text-[11px] text-muted leading-[1.8] my-2.5 mx-0">
                   若瀏覽器無法顯示 PDF，可下載原始檔閱讀；筆記仍可在右側保存。
                 </p>
               </>
             ) : (
-              <div ref={scroll} className="reader-scroll" onScroll={onScroll}>
-                <article
+              <div ref={scroll} className={styles.readerScroll} onScroll={onScroll}>
+                <DocumentProse
                   ref={article}
-                  className="document-prose"
                   style={{ fontSize }}
                   onMouseUp={selectQuote}
                   onKeyUp={(e) => {
@@ -622,10 +659,10 @@ export function ReaderWorkspace() {
                   {doc.format === 'xlsx' ? (
                     <>
                       <h2>{doc.sheets[activeSection]?.name}</h2>
-                      <p className="small-note">
+                      <p className="small-note text-[11px] text-muted leading-[1.8] my-2.5 mx-0">
                         顯示儲存格原始值與公式的快取結果；不重算公式，也不保留 Excel 樣式。
                       </p>
-                      <div className="reader-table-wrap">
+                      <div className="reader-table-wrap overflow-auto max-w-full my-5 mx-0">
                         <table>
                           <tbody>
                             {doc.sheets[activeSection]?.rows.map((row, index) => (
@@ -651,10 +688,16 @@ export function ReaderWorkspace() {
                       markdown={doc.format === 'markdown'}
                     />
                   )}
-                </article>
+                </DocumentProse>
               </div>
             )}
-            <div className="reading-footer">
+            <div
+              className={[
+                'reading-footer flex justify-between text-[10px] text-muted py-3.5 px-5.5 border-t',
+                'border-solid border-t-line',
+                'max-md:text-[9px] max-md:py-3 max-md:px-4',
+              ].join(' ')}
+            >
               <span>
                 {doc.format === 'pdf' ? `頁碼書籤 ${pdfPage}` : `閱讀位置 ${percentage}%`}
               </span>
@@ -683,4 +726,96 @@ export function ReaderWorkspace() {
       )}
     </div>
   )
+}
+
+const styles = {
+  readerLoading: [
+    'reader-loading max-w-225 py-17.5 px-6 m-auto',
+    '[&_h1]:text-[28px] [&_h1]:font-medium [&_h1]:my-5 [&_h1]:mx-0',
+    '[&_p]:leading-[1.8]',
+    '[&_a]:inline-block [&_a]:mt-[25px] [&_a]:text-rust',
+  ].join(' '),
+  readerHeader: [
+    'reader-header flex items-center gap-7 py-7 px-0 border-b border-solid border-b-line',
+    '[&_h1]:font-display [&_h1]:text-[25px] [&_h1]:font-medium [&_h1]:mt-2 [&_h1]:mx-0',
+    '[&_h1]:mb-0 [&_h1]:wrap-anywhere',
+    '[&_>_div]:flex-1 [&_>_div]:min-w-0',
+    'max-md:gap-[15px] max-md:py-5.5 max-md:px-0',
+    'max-md:[&_h1]:text-[19px]',
+    'max-md:[&_.eyebrow]:text-[8px] max-md:[&_.eyebrow]:tracking-[1px]',
+  ].join(' '),
+  readerTabs: [
+    'reader-tabs flex items-center gap-6',
+    '[&_button]:border-0 [&_button]:border-b-2 [&_button]:border-solid',
+    '[&_button]:border-b-transparent [&_button]:py-3.5 [&_button]:px-0',
+    '[&_button]:bg-transparent [&_button]:text-[12px] [&_button]:text-muted',
+    '[&_button.active]:border-ink [&_button.active]:text-ink',
+    'max-md:gap-5 max-md:w-full max-md:justify-between',
+    'max-md:[&_button]:text-[11px]',
+  ].join(' '),
+  readerTools: [
+    'reader-tools flex items-center gap-4 text-[11px] text-muted flex-wrap',
+    '[&_button]:bg-transparent [&_button]:border-0 [&_button]:py-2 [&_button]:px-0',
+    '[&_select]:bg-transparent [&_select]:border-0 [&_select]:ml-[5px] [&_select]:p-1',
+    'max-lg:pb-[5px]',
+    'max-md:gap-3.5 max-md:text-[10px]',
+  ].join(' '),
+  readerStatus: [
+    'reader-status py-3 px-4.5 bg-[#eeeee3] mt-4 mx-0 mb-0 rounded-[5px] text-[12px]',
+    'leading-[1.8]',
+    '[&_button]:bg-transparent [&_button]:border-0 [&_button]:underline [&_button]:ml-2.5',
+  ].join(' '),
+  editorPanel: [
+    'editor-panel pt-9 px-0 pb-0 max-w-275 m-auto',
+    '[&_textarea]:block [&_textarea]:w-full',
+    '[&_textarea]:[min-height:calc(100dvh_-_370px)]',
+    '[&_textarea]:border [&_textarea]:border-solid [&_textarea]:border-line',
+    '[&_textarea]:bg-surface [&_textarea]:rounded-[5px] [&_textarea]:p-7',
+    '[&_textarea]:font-code [&_textarea]:text-[15px] [&_textarea]:leading-[1.9]',
+    '[&_textarea]:resize-y [&_textarea]:mb-3',
+    'max-md:[&_textarea]:p-4.5 max-md:[&_textarea]:text-[13px]',
+  ].join(' '),
+  editorHeading: [
+    'editor-heading flex items-center justify-between gap-5 mb-6',
+    '[&_h2]:text-[23px] [&_h2]:font-medium [&_h2]:my-3 [&_h2]:mx-0',
+    '[&_p:not(.eyebrow)]:text-[12px] [&_p:not(.eyebrow)]:text-muted',
+    'max-md:items-start',
+    'max-md:[&_h2]:text-[19px]',
+    'max-md:[&_.primary-button]:text-[10px] max-md:[&_.primary-button]:p-2.5',
+    'max-md:[&_.primary-button]:whitespace-nowrap',
+    'max-md:[&_p:not(.eyebrow)]:text-[10px] max-md:[&_p:not(.eyebrow)]:leading-[1.7]',
+  ].join(' '),
+  readingLayout: [
+    'reading-layout grid grid-cols-[minmax(0,_1fr)_300px] gap-7 mt-6.5 items-start',
+    'max-lg:grid-cols-[minmax(0,_1fr)_250px] max-lg:gap-5',
+    'max-md:grid-cols-[minmax(0,_1fr)] max-md:mt-4.5',
+  ].join(' '),
+  withNotes: [
+    'with-notes',
+    'max-md:[&_.notes-panel]:block',
+    'max-md:[&_.reader-scroll]:max-h-[42dvh] max-md:[&_.reader-scroll]:min-h-62.5',
+  ].join(' '),
+  sectionSelector: [
+    'section-selector border-b border-solid border-b-line py-3 px-5 text-[11px] text-muted',
+    '[&_label]:flex [&_label]:gap-[15px] [&_label]:items-center',
+    '[&_select]:min-w-0 [&_select]:max-w-[90%] [&_select]:border-0',
+    '[&_select]:bg-transparent [&_select]:text-ink [&_select]:p-[5px]',
+  ].join(' '),
+  pdfControls: [
+    'pdf-controls flex items-center gap-3.5 flex-wrap py-3.5 px-5 text-[11px] text-muted',
+    '[&_input]:w-[65px] [&_input]:border [&_input]:border-solid [&_input]:border-line',
+    '[&_input]:p-[5px] [&_input]:bg-transparent [&_input]:rounded-[3px] [&_input]:ml-1.5',
+    '[&_button]:bg-[#e9ecdf] [&_button]:border-0 [&_button]:py-1.5 [&_button]:px-3',
+    '[&_button]:rounded-[4px] [&_button]:text-ink',
+    '[&_>_span]:text-[10px]',
+  ].join(' '),
+  readerScroll: [
+    'reader-scroll',
+    '[height:calc(100dvh_-_250px)]',
+    'min-h-87.5 max-h-212.5 overflow-auto',
+    '[scroll-behavior:auto]',
+    '[overscroll-behavior:contain]',
+    'max-md:[height:calc(100dvh_-_270px)]',
+    'max-md:min-h-75',
+  ].join(' '),
 }
