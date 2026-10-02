@@ -20,7 +20,7 @@
 以下沙盒與同步能力依 [Local-First 架構提案](LOCAL_FIRST_ARCHITECTURE.md) 細化，尚未實作：
 
 - Hash／DAG 分支與章節／段落 Fork；Adopt 建立新主線版本，保留來源與歷史。
-- 靜默持久化 Temp Branch、切換時自動還原草稿，以及清理／復原規則。
+- 草稿已持久化並支援切換／重啟恢復、多分頁保留與失敗重試；Temp Branch 與沙盒分支整合仍待完成。
 - Side-by-Side 雙欄 Diff；現有文字／筆記 inline diff 保留。
 - 各端共用版本、差異與沙盒核心，並提供各平台的持久化介面。
 - 離線同步佇列；head 不一致時保留平行分支，讓使用者比較後採納或保留雙方。

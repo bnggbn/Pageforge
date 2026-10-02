@@ -46,7 +46,7 @@ function loadConfig({
     !reading.fontSizes.includes(reading.defaultFontSize)
   )
     throw new Error('reading.fontSizes 必須是遞增的 10–48 字級，且包含 defaultFontSize。')
-  for (const key of ['progressDebounceMs', 'pdfMaxPage'])
+  for (const key of ['progressDebounceMs', 'draftDebounceMs', 'pdfMaxPage'])
     if (!Number.isSafeInteger(reading[key]) || reading[key] < 1 || reading[key] > 1000000)
       throw new Error(`reading.${key} 無效。`)
   if (

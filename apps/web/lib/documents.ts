@@ -1,6 +1,13 @@
 import type { DocumentFormat, Section, Sheet, Revision, DocumentSummary } from '@pageforge/domain'
 export * from '@pageforge/domain'
 
+export class WorkingCopyConflict extends Error {
+  constructor() {
+    super('另一個分頁更新了此草稿，將另外保存你的修改。')
+    this.name = 'WorkingCopyConflict'
+  }
+}
+
 export interface LibraryDocument {
   id: string
   title: string

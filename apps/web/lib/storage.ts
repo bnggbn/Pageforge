@@ -2,8 +2,14 @@ import { configure, config, type PublicConfig } from './config'
 const normalizeFontSize = (size: number) =>
   config.reading.fontSizes.includes(size) ? size : config.reading.defaultFontSize
 import * as browser from './indexed-storage'
-import type { DocumentSummary, LibraryDocument, ReadingPosition, Revision } from './documents'
-import { latest } from './documents'
+import type {
+  DocumentSummary,
+  LibraryDocument,
+  ReadingPosition,
+  Revision,
+  WorkingCopy,
+} from './documents'
+import { latest, WorkingCopyConflict } from './documents'
 
 export { database, changeSource, announce } from './indexed-storage'
 export interface StorageInfo {
@@ -50,6 +56,7 @@ async function api<T>(route: string, method = 'GET', data?: unknown): Promise<T>
   }
   const value = await response.json()
   if (!response.ok) {
+    if (response.status === 409 && route.includes('/drafts/')) throw new WorkingCopyConflict()
     if (response.status === 409 && method === 'POST' && route === '/documents')
       throw new DOMException(value.error, 'ConstraintError')
     throw new Error(value.error ?? '本機書架操作失敗。')
@@ -137,6 +144,23 @@ export async function readFontSize(): Promise<number> {
 export async function saveFontSize(size: number): Promise<void> {
   if ((await storageInfo()).mode !== 'disk') return browser.saveFontSize(size)
   await api('/settings', 'PUT', { fontSize: size })
+}
+export async function listWorkingCopies(id: string): Promise<WorkingCopy[]> {
+  return (await storageInfo()).mode === 'disk'
+    ? api(`/documents/${encodeURIComponent(id)}/drafts`)
+    : browser.listWorkingCopies(id)
+}
+export async function saveWorkingCopy(copy: WorkingCopy, expectedVersion: string | null) {
+  if ((await storageInfo()).mode !== 'disk') return browser.saveWorkingCopy(copy, expectedVersion)
+  await api(`/documents/${encodeURIComponent(copy.documentId)}/drafts/${copy.id}`, 'PUT', {
+    copy,
+    expectedVersion,
+  })
+}
+export async function removeWorkingCopy(id: string, copyId: string, expectedVersion: string) {
+  if ((await storageInfo()).mode !== 'disk')
+    return browser.removeWorkingCopy(id, copyId, expectedVersion)
+  await api(`/documents/${encodeURIComponent(id)}/drafts/${copyId}`, 'DELETE', { expectedVersion })
 }
 export async function collectionFiles(): Promise<{ name: string; size: number; url: string }[]> {
   return api('/collection')

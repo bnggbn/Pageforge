@@ -8,6 +8,7 @@
     "imageMiB": 8,
     "snapshotNotesMiB": 5,
     "revisionCount": 10000,
+    "workingCopyCount": 30,
     "archiveMiB": 40,
     "archiveEntryMiB": 15,
     "archiveEntries": 2000,
@@ -22,6 +23,7 @@
     "defaultFontSize": 18,
     "fontSizes": [14, 16, 18, 20, 24, 28],
     "progressDebounceMs": 450,
+    "draftDebounceMs": 500,
     "pdfMaxPage": 100000
   },
   "diff": { "maxCharacters": 1048576, "timeoutMs": 800, "maxEditLength": 10000 }

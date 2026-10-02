@@ -1,6 +1,6 @@
 # 本機文件與版本模型
 
-目前實作位於 `apps/web/lib/`，固定資料夾服務在 `scripts/library-server.cjs`。預設使用硬碟書架，單獨靜態部署使用 IndexedDB `pageforge-library`（schema version 1）作為另一種模式。
+目前實作位於 `apps/web/lib/`，固定資料夾服務在 `scripts/library-server.cjs`。預設使用硬碟書架，單獨靜態部署使用 IndexedDB `pageforge-library`（schema version 2，原子升級舊資料庫）作為另一種模式。
 
 後續 Hash／DAG、Fork／Adopt、Temp Branch、雲端內容定址儲存與獨立會話鏈，見
 [Local-First 架構提案](LOCAL_FIRST_ARCHITECTURE.md)。提案中的節點欄位尚未取代以下實作；
@@ -22,6 +22,7 @@
 - `summaries`：不含內容的書架摘要與顯示進度；`[format, originalHash]` 為唯一索引，阻止並行重複匯入。
 - `progress`：文件 ID、版本 ID、穩定區塊標記、區塊內比例、百分比、章節／工作表或 PDF 頁碼。
 - `settings`：閱讀字級。
+- `drafts`：以 UUID 區分工作草稿，依 documentId 建立索引；版本 token 防止另一分頁覆寫。
 
 文件與摘要在同一 transaction 建立；刪除文件、摘要與進度也在同一 transaction 完成。每次版本儲存先比對預期 head，再原子追加版本與更新摘要。另一分頁已修改／刪除時拒絕覆寫，編輯器保留未保存文字。
 
@@ -50,6 +51,23 @@ PDF 不讀取內建閱讀器的捲動事件，使用手動保存的頁碼書籤�
 筆記包含 ID、文字、引用、位置標記與 UTC 時間。引用與位置是建立時的文字紀錄，尚未自動重定位到修改後原文。
 
 多分頁進度採最後成功提交值，但必須仍指向目前 head；文件已刪除時拒絕寫回。版本修改透過 BroadcastChannel 通知其他分頁，自身的保存不觸發過期提示。
+
+## 工作草稿
+
+文字與未提交筆記分開於正式版本保存。每份草稿含 ID、文件 ID、基準版本 ID、
+版本 token、文字、筆記內文／引用／位置與 UTC 更新時間。
+固定資料夾儲存在 `library/books/{id}/drafts/{draft-id}.json`，使用暫存檔、fsync 與 rename。
+瀏覽器模式在檢查文件仍存在的同一 transaction 寫入 drafts。
+
+暫存採 `reading.draftDebounceMs`；切換模式或返回書架先等待成功落盤。
+寫入失敗保留輸入並阻止切換。兩個分頁恢復同一草稿後，過期 token 的寫入另建草稿，
+不覆蓋先前寫入；使用者可選取保留的草稿。
+基準版本比主線舊時明確提示，正式版本提交仍檢查主線 head。
+
+保存筆記保留尚未提交的文字。正式提交後整理自己的草稿；整理失敗時保留復原副本並提示。
+捨棄草稿只刪除 token 相符的那份；刪除文件同步移除草稿（固定資料夾隨文件移到垃圾區）。
+每份文件的草稿上限由 `limits.workingCopyCount` 設定，不自動按期限清除。
+瀏覽器關閉前若還有尚未落盤的輸入，保留原生離開提醒；無法保證系統強制終止前的最後按鍵已保存。
 
 ## 匯出
 

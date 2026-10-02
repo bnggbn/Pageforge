@@ -1,6 +1,7 @@
 const { validateRevision } = require('./library/revisions.cjs')
 const { loadConfig, publicConfig } = require('./config.cjs')
 const { serveImage } = require('./library/images.cjs')
+const { createWorkingCopyStore } = require('./library/working-copies.cjs')
 const http = require('node:http')
 const net = require('node:net')
 const fs = require('node:fs')
@@ -149,6 +150,7 @@ function createLibraryServer({
     originalType: item.originalType,
   })
   const settingsFile = path.join(state, 'settings.json')
+  const drafts = createWorkingCopyStore({ directory, record, config, writeJSON, fail })
   const settings = () =>
     fs.existsSync(settingsFile)
       ? readJSON(settingsFile)
@@ -319,6 +321,17 @@ function createLibraryServer({
             maxMiB: config.limits.imageMiB,
             response: res,
           })
+        }
+        const draftRoute = /^\/documents\/([^/]+)\/drafts(?:\/([^/]+))?$/.exec(route)
+        if (draftRoute) {
+          const [, id, copyId] = draftRoute
+          if (req.method === 'GET' && !copyId) return send(res, drafts.list(id))
+          if (copyId && ['PUT', 'DELETE'].includes(req.method)) {
+            const input = await readBody(req, config)
+            if (req.method === 'PUT') drafts.save(id, copyId, input.copy, input.expectedVersion)
+            else drafts.remove(id, copyId, input.expectedVersion)
+            return send(res, { saved: true })
+          }
         }
         const match = /^\/documents\/([^/]+)(?:\/(revisions|progress))?$/.exec(route)
         if (match) {

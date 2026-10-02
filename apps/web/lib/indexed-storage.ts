@@ -6,6 +6,8 @@ import {
   type LibraryDocument,
   type ReadingPosition,
   type Revision,
+  type WorkingCopy,
+  WorkingCopyConflict,
 } from './documents'
 
 let opening: Promise<IDBDatabase> | null = null
@@ -17,14 +19,20 @@ export function database(): Promise<IDBDatabase> {
       reject(new Error('此瀏覽器無法使用本機儲存。'))
       return
     }
-    const request = indexedDB.open('pageforge-library', 1)
+    const request = indexedDB.open('pageforge-library', 2)
     request.onupgradeneeded = () => {
       const db = request.result
-      db.createObjectStore('documents', { keyPath: 'id' })
-      const meta = db.createObjectStore('summaries', { keyPath: 'id' })
-      meta.createIndex('source', ['format', 'originalHash'], { unique: true })
-      db.createObjectStore('progress', { keyPath: 'documentId' })
-      db.createObjectStore('settings')
+      if (!db.objectStoreNames.contains('documents')) {
+        db.createObjectStore('documents', { keyPath: 'id' })
+        const meta = db.createObjectStore('summaries', { keyPath: 'id' })
+        meta.createIndex('source', ['format', 'originalHash'], { unique: true })
+        db.createObjectStore('progress', { keyPath: 'documentId' })
+        db.createObjectStore('settings')
+      }
+      if (!db.objectStoreNames.contains('drafts')) {
+        const drafts = db.createObjectStore('drafts', { keyPath: 'id' })
+        drafts.createIndex('document', 'documentId')
+      }
     }
     request.onblocked = () => {
       reject(new Error('請關閉其他 Pageforge 分頁後再試。'))
@@ -127,9 +135,17 @@ export async function appendRevision(
 }
 export async function deleteDocument(id: string): Promise<void> {
   const db = await database()
-  const tx = db.transaction(['documents', 'summaries', 'progress'], 'readwrite')
+  const tx = db.transaction(['documents', 'summaries', 'progress', 'drafts'], 'readwrite')
   const done = completed(tx)
   for (const name of ['documents', 'summaries', 'progress']) tx.objectStore(name).delete(id)
+  const drafts = tx.objectStore('drafts').index('document').openKeyCursor(id)
+  drafts.onsuccess = () => {
+    const cursor = drafts.result
+    if (cursor) {
+      tx.objectStore('drafts').delete(cursor.primaryKey)
+      cursor.continue()
+    }
+  }
   await done
   announce()
 }
@@ -177,4 +193,62 @@ export function announce() {
     channel.postMessage({ source: changeSource })
     channel.close()
   }
+}
+
+export async function listWorkingCopies(id: string): Promise<WorkingCopy[]> {
+  const db = await database()
+  return result(db.transaction('drafts').objectStore('drafts').index('document').getAll(id))
+}
+
+export async function saveWorkingCopy(copy: WorkingCopy, expectedVersion: string | null) {
+  const db = await database()
+  return new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(['documents', 'drafts'], 'readwrite')
+    let failure: Error | null = null
+    const fail = (error: Error) => {
+      failure = error
+      tx.abort()
+    }
+    const document = tx.objectStore('documents').get(copy.documentId)
+    document.onsuccess = () => {
+      const doc: LibraryDocument | undefined = document.result
+      if (!doc || !doc.revisions.some((revision) => revision.id === copy.baseRevisionId)) {
+        fail(new Error('文件或草稿來源已不存在，草稿未保存。'))
+        return
+      }
+      const stored = tx.objectStore('drafts').get(copy.id)
+      stored.onsuccess = () => {
+        if (
+          (stored.result?.version ?? null) !== expectedVersion ||
+          (stored.result && stored.result.documentId !== copy.documentId)
+        ) {
+          fail(new WorkingCopyConflict())
+          return
+        }
+        const count = tx.objectStore('drafts').index('document').count(copy.documentId)
+        count.onsuccess = () => {
+          if (!stored.result && count.result >= config.limits.workingCopyCount) {
+            fail(new Error('此文件的草稿數量已達上限，請先整理保留的草稿。'))
+            return
+          }
+          tx.objectStore('drafts').put(copy)
+        }
+      }
+    }
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error ?? new Error('草稿保存失敗。'))
+    tx.onabort = () => reject(failure ?? tx.error ?? new Error('草稿保存失敗。'))
+  })
+}
+
+export async function removeWorkingCopy(id: string, copyId: string, expectedVersion: string) {
+  const db = await database()
+  const tx = db.transaction('drafts', 'readwrite')
+  const done = completed(tx)
+  const request = tx.objectStore('drafts').get(copyId)
+  request.onsuccess = () => {
+    if (request.result?.documentId === id && request.result.version === expectedVersion)
+      tx.objectStore('drafts').delete(copyId)
+  }
+  await done
 }

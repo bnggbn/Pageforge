@@ -25,6 +25,17 @@ export interface Revision {
   sai: string
   envelope: string
 }
+export interface WorkingCopy {
+  id: string
+  documentId: string
+  baseRevisionId: string
+  version: string
+  content: string
+  body: string
+  quote: string
+  location: string
+  updatedAt: string
+}
 export interface ReadingPosition {
   revisionId: string
   block: string

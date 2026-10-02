@@ -45,6 +45,7 @@ export function NotesPanel({
             'px-2.5 py-2 text-[11px] text-ink',
           ].join(' ')}
           aria-label="筆記位置"
+          disabled={busy}
           value={location}
           onChange={(e) => setLocation(e.target.value.slice(0, config.limits.locationCharacters))}
         />
@@ -60,6 +61,7 @@ export function NotesPanel({
           <button
             className="absolute top-1.5 right-1.5 border-0 bg-transparent"
             aria-label="移除引用"
+            disabled={busy}
             onClick={() => setQuote('')}
           >
             ×
@@ -72,6 +74,7 @@ export function NotesPanel({
           'p-3.5 text-[13px] leading-[1.8]',
         ].join(' ')}
         aria-label="新增筆記"
+        disabled={busy}
         placeholder="記下此刻的想法…"
         value={body}
         maxLength={config.limits.noteCharacters}

@@ -10,6 +10,8 @@ import { NotesPanel } from './NotesPanel'
 import { exportFile } from '@/lib/download'
 import { DocumentContent } from './DocumentContent'
 import { DocumentProse } from './DocumentProse'
+import { WorkingCopyBar } from './WorkingCopyBar'
+import { useWorkingCopy } from '@/hooks/useWorkingCopy'
 import {
   EDITABLE,
   FORMAT_LABELS,
@@ -40,10 +42,12 @@ export function ReaderWorkspace() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [tab, setTab] = useState<Tab>('read')
-  const [draft, setDraft] = useState('')
-  const [body, setBody] = useState('')
-  const [quote, setQuote] = useState('')
-  const [location, setLocation] = useState('全文筆記')
+  const working = useWorkingCopy()
+  const { content: draft, body, quote, location } = working
+  const setDraft = (content: string) => working.change({ content })
+  const setBody = (body: string) => working.change({ body })
+  const setQuote = (quote: string) => working.change({ quote })
+  const setLocation = (location: string) => working.change({ location })
   const [busy, setBusy] = useState(false)
   const [fontSize, setFontSize] = useState(config.reading.defaultFontSize)
   const [section, setSection] = useState(0)
@@ -78,6 +82,7 @@ export function ReaderWorkspace() {
       if (!loaded) throw new Error('找不到這份文件，可能已被刪除。')
       await verifyHistory(loaded)
       const last = latest(loaded)
+      const recovered = await working.open(loaded)
       const [position, savedFontSize] = await Promise.all([readProgress(id), readFontSize()])
       const compatible =
         position &&
@@ -90,7 +95,7 @@ export function ReaderWorkspace() {
       setFontSize(savedFontSize)
       setDoc(loaded)
       currentDoc.current = loaded
-      setDraft(last.content)
+      if (recovered.restored) setTab(recovered.edited ? 'edit' : recovered.note ? 'notes' : 'read')
       setVerified(true)
       setFrom(loaded.revisions.at(-2)?.id ?? last.id)
       setTo(last.id)
@@ -100,7 +105,7 @@ export function ReaderWorkspace() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [working.open])
   useEffect(() => {
     mounted.current = true
     void load()
@@ -127,14 +132,6 @@ export function ReaderWorkspace() {
     setPdfUrl(url)
     return () => URL.revokeObjectURL(url)
   }, [doc?.id, doc?.format]) // Original binary stays immutable across revisions.
-  useEffect(() => {
-    if (!dirty && !body.trim()) return
-    const prevent = (event: BeforeUnloadEvent) => {
-      event.preventDefault()
-    }
-    window.addEventListener('beforeunload', prevent)
-    return () => window.removeEventListener('beforeunload', prevent)
-  }, [dirty, body])
 
   const capture = useCallback((): ReadingPosition | null => {
     const active = currentDoc.current,
@@ -210,15 +207,14 @@ export function ReaderWorkspace() {
 
   const changeTab = async (next: Tab) => {
     if (busy) return
-    if (tab === 'edit' && dirty && !window.confirm('離開編輯會放棄未儲存的修改。要繼續嗎？')) return
     try {
+      await working.flush()
       await flush()
     } catch (e) {
       setError(errorMessage(e))
       return
     }
     restore.current = capture()
-    if (head) setDraft(head.content)
     setTab(next)
     setError('')
     setMessage('')
@@ -228,18 +224,22 @@ export function ReaderWorkspace() {
     content: string,
     notes: Note[],
     restoredFrom: string | null = null,
+    clearNote = false,
   ) => {
     if (!doc || !head || busy || !verified) return false
     setBusy(true)
     setError('')
     setMessage('')
     try {
+      await working.flush()
       await flush()
       const version = await createRevision(doc, kind, content, notes, restoredFrom)
       const updated = await appendRevision(doc, head.id, version)
       setDoc(updated)
       currentDoc.current = updated
-      setDraft(latest(updated).content)
+      await working.rebase(updated, kind === 'edit' || kind === 'restore', clearNote).catch((e) => {
+        setError(`版本已保存，但草稿整理失敗：${errorMessage(e)}`)
+      })
       setStale(false)
       setFrom(head.id)
       setTo(version.id)
@@ -287,11 +287,7 @@ export function ReaderWorkspace() {
       location,
       createdAt: new Date().toISOString(),
     }
-    if (await commit('note', head.content, [...head.notes, note])) {
-      setBody('')
-      setQuote('')
-      setLocation('全文筆記')
-    }
+    await commit('note', head.content, [...head.notes, note], null, true)
   }
   const selectQuote = () => {
     const selection = window.getSelection()
@@ -378,8 +374,8 @@ export function ReaderWorkspace() {
         : []
   const activeSection = Math.min(Math.max(0, section), Math.max(0, sections.length - 1))
   const returnToShelf = async () => {
-    if ((dirty || body.trim()) && !window.confirm('有尚未保存的文字或筆記，仍要回書架嗎？')) return
     try {
+      await working.flush()
       await flush()
       window.location.href = '/'
     } catch (e) {
@@ -488,6 +484,7 @@ export function ReaderWorkspace() {
                 if (timer.current) clearTimeout(timer.current)
                 pending.current = null
                 await deleteDocument(doc.id)
+                working.close()
                 window.location.href = '/'
               } catch (e) {
                 setError(errorMessage(e))
@@ -511,14 +508,12 @@ export function ReaderWorkspace() {
             <p>
               另一個分頁更新了書架。
               <button
-                onClick={() => {
-                  if (
-                    !(dirty || body.trim()) ||
-                    window.confirm('重新載入會放棄未儲存內容。確定繼續？')
-                  ) {
-                    setBody('')
-                    setTab('read')
-                    void load()
+                onClick={async () => {
+                  try {
+                    await working.flush()
+                    await load()
+                  } catch (e) {
+                    setError(errorMessage(e))
                   }
                 }}
               >
@@ -527,6 +522,42 @@ export function ReaderWorkspace() {
             </p>
           )}
         </div>
+      )}
+      {(dirty || body || quote || working.copies.length > 0 || working.error) && (
+        <WorkingCopyBar
+          status={working.status}
+          error={working.error}
+          restored={working.restored}
+          stale={working.baseRevisionId !== head.id}
+          copies={working.copies}
+          selectedId={working.id}
+          busy={busy}
+          onRetry={() => void working.flush().catch((e) => setError(errorMessage(e)))}
+          onSelect={(id) => {
+            void (async () => {
+              try {
+                await working.flush()
+                const restored = await working.open(doc, id)
+                setTab(restored.edited ? 'edit' : 'notes')
+              } catch (e) {
+                setError(errorMessage(e))
+              }
+            })()
+          }}
+          onDiscard={() => {
+            if (window.confirm('捨棄此草稿？已保存版本與其他草稿會保留。'))
+              void (async () => {
+                setBusy(true)
+                try {
+                  await working.discard(doc)
+                } catch (e) {
+                  setError(errorMessage(e))
+                } finally {
+                  setBusy(false)
+                }
+              })()
+          }}
+        />
       )}
       {tab === 'history' ? (
         <RevisionHistory
@@ -563,6 +594,7 @@ export function ReaderWorkspace() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             spellCheck={false}
+            disabled={busy}
           />
           <span className="small-note text-[11px] text-muted leading-[1.8] my-2.5 mx-0">
             {dirty ? '有未儲存的修改' : '目前文字已保存'} · {draft.length.toLocaleString()} 字元
