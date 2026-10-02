@@ -25,7 +25,12 @@ Web 畫面透過 `lib/storage.ts` 使用儲存介面：本機服務模式連接 
 
 ## 閱讀與版本
 
-- `ReaderWorkspace` 協調閱讀與保存；`NotesPanel` 和 `RevisionHistory` 分別管理筆記與版本畫面。
+- `ReaderWorkspace` 只組合載入／錯誤狀態與已驗證文件的 `ReaderScreen`；後者接線工具列、各模式與操作，不直接讀寫 storage 或計算 DOM 座標。
+- `useReaderDocument` 負責載入、VAX 驗證、草稿恢復與跨分頁通知；載入完成後才建立閱讀畫面，過期載入結果不覆蓋目前狀態。
+- `useReaderProgress` 管理閱讀位置、章節／PDF 書籤、字級、DOM refs、防抖保存與定位恢復。從編輯／歷史等模式返回時保留最後閱讀位置；文字改變才清除舊位置。
+- `useReaderCommands` 管理文字／筆記／還原／採納提交與草稿整理；`useReaderNavigation` 等待草稿及進度保存後才切換、重載或返回。筆記與版本畫面分別由 `NotesPanel`、`RevisionHistory` 負責。
+- `ReaderHeader`、`ReaderToolbar`、`ReaderFeedback` 與 `TextEditorPanel` 各自持有 UI 與 Tailwind；格式呈現分為 `PdfDocumentView`、`SpreadsheetView`、`TextDocumentView`，文字／表格共用 `ScrollReaderFrame` 與章節選單。
+- PDF Blob URL 由 `PdfDocumentView` 建立與釋放，離開 PDF View 立即 revoke；同文件保存筆記不重新建立 URL。`useQuoteSelection` 確認選取範圍在文章內，再建立引用與位置。
 - `SandboxPanel` 管理整份文字的試寫、比較與採納；`VersionDiff` 共用單欄差異呈現。
 - `useWorkingCopy` 管理防抖暫存、版本 token 與恢復；主線和沙盒分別持有 session，切換前等待落盤。
 - `lib/sandboxes.ts` 建立與驗證分支投影；`indexed-sandboxes.ts`、`scripts/library/sandboxes.cjs` 實作各自的原子分支保存；`browser-migration.ts` 複製沙盒與草稿，保留分歧來源。

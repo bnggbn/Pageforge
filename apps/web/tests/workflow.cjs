@@ -45,6 +45,20 @@ const fs = require('node:fs')
   }
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } })
+    await context.addInitScript(() => {
+      window.__pdfUrls = { created: [], revoked: [] }
+      const create = URL.createObjectURL.bind(URL),
+        revoke = URL.revokeObjectURL.bind(URL)
+      URL.createObjectURL = (blob) => {
+        const url = create(blob)
+        if (blob.type === 'application/pdf') window.__pdfUrls.created.push(url)
+        return url
+      }
+      URL.revokeObjectURL = (url) => {
+        if (window.__pdfUrls.created.includes(url)) window.__pdfUrls.revoked.push(url)
+        revoke(url)
+      }
+    })
     const page = await context.newPage()
     const errors = [],
       remote = []
@@ -103,11 +117,34 @@ const fs = require('node:fs')
     await waitReader(page)
     const after = await page.locator('.reader-scroll').evaluate((el) => el.scrollTop)
     assert.ok(Math.abs(before - after) < 15, `progress restored ${before} / ${after}`)
+    // A non-reading mode must not erase the last captured reading anchor.
+    await page.getByRole('button', { name: '編輯文字', exact: true }).click()
+    await page.getByRole('button', { name: '版本紀錄', exact: true }).click()
+    await page.getByRole('button', { name: '閱讀', exact: true }).click()
+    await page.waitForFunction(
+      (top) => Math.abs(document.querySelector('.reader-scroll').scrollTop - top) < 15,
+      after,
+    )
     await page.getByLabel('閱讀字級').selectOption('24')
     await page.waitForTimeout(700)
     await page.reload()
     await waitReader(page)
     assert.equal(await page.getByLabel('閱讀字級').inputValue(), '24')
+    const selectedQuote = await page
+      .locator('.document-prose p')
+      .first()
+      .evaluate((element) => {
+        const range = document.createRange()
+        range.selectNodeContents(element)
+        const selection = window.getSelection()
+        selection.removeAllRanges()
+        selection.addRange(range)
+        const text = selection.toString().trim()
+        element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+        return text
+      })
+    await page.locator('.note-quote').waitFor()
+    assert.ok((await page.locator('.note-quote').innerText()).includes(selectedQuote))
     await page.getByRole('button', { name: '筆記 0', exact: true }).click()
     await page.getByLabel('新增筆記').fill('這是我的第一則筆記。')
     await page.getByRole('button', { name: '保存筆記', exact: true }).click()
@@ -172,12 +209,22 @@ const fs = require('node:fs')
     await page.screenshot({ path: '.preview/pageforge-xlsx.png', fullPage: true })
     await importDocument('文件.pdf')
     assert.ok((await page.locator('iframe').getAttribute('src')).startsWith('blob:'))
+    const pdfSource = (await page.locator('iframe').getAttribute('src')).split('#')[0]
     await page.getByLabel('PDF 頁碼書籤').fill('1')
     await page.getByRole('button', { name: '保存頁碼', exact: true }).click()
     await page.getByText('已保存第 1 頁書籤。', { exact: true }).waitFor()
     await page.getByLabel('新增筆記').fill('PDF 也可以留下筆記。')
     await page.getByRole('button', { name: '保存筆記', exact: true }).click()
     await page.getByText('已保存第 2 版。', { exact: true }).waitFor()
+    assert.equal((await page.locator('iframe').getAttribute('src')).split('#')[0], pdfSource)
+    assert.equal(await page.evaluate(() => window.__pdfUrls.created.length), 1)
+    await page.getByRole('button', { name: '版本紀錄', exact: true }).click()
+    await page.waitForFunction((url) => window.__pdfUrls.revoked.includes(url), pdfSource)
+    await page.getByRole('button', { name: '閱讀', exact: true }).click()
+    await page.waitForFunction(() =>
+      document.querySelector('iframe')?.getAttribute('src')?.startsWith('blob:'),
+    )
+    assert.equal(await page.evaluate(() => window.__pdfUrls.created.length), 2)
     assert.equal((await db(page, ['summaries'], 'readonly', 'getAll')).length, 5)
     await page.goto(url)
     await page.getByRole('button', { name: '匯入文件', exact: true }).click()
@@ -276,7 +323,7 @@ const fs = require('node:fs')
     assert.deepEqual(remote, [])
     await context.close()
     console.log(
-      'PASS: 5 formats, reload persistence, position/font restoration, notes, edit, diff, restore, duplicate import, concurrent edit rejection, invalid files, quota failure rollback, atomic deletion, 5 viewport widths, tamper detection, no remote content requests or runtime errors.',
+      'PASS: 5 formats, reload persistence, position/font and mode restoration, quoted notes, PDF URL lifetime, edit, diff, restore, duplicate import, concurrent edit rejection, invalid files, quota failure rollback, atomic deletion, 5 viewport widths, tamper detection, no remote content requests or runtime errors.',
     )
   } finally {
     await browser.close()
