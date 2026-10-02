@@ -7,7 +7,7 @@
 - `.pageforge/settings.json` 保存字級與初次載入狀態。
 - `.trash/` 保存從書架移除的文件；不會自動清空。
 
-使用 `npm run dev:web` 開發，或 `npm run build:web` 後執行 `npm run start:web`。入口固定為 http://localhost:3000。
+使用 `pnpm dev:web` 開發，或 `pnpm build:web` 後執行 `pnpm start:web`。入口固定為 http://localhost:3000。
 
 備份前先關閉服務，複製整個 `library/`。私人文件、版本與設定預設不納入 Git，只有隨附的四份文件與這份說明會提交。
 

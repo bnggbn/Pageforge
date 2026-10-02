@@ -39,37 +39,39 @@ VAX 提供本機鏈式完整性驗證，未包含數位簽章或外部可信錨�
 
 ## 開發
 
-需 Node.js 20 以上與 npm，在根目錄執行：
+需 Node.js 20.19 以上與 pnpm 10.34.6，在根目錄執行：
 
 ```sh
-npm ci
-npm run dev:web
+corepack enable pnpm
+pnpm install --frozen-lockfile
+pnpm dev:web
 ```
 
-Windows PowerShell 若禁止 npm.ps1，改用 `npm.cmd`。
+Windows PowerShell 若禁止 pnpm.ps1，改用 `pnpm.cmd`。未啟用 shim 時也可用 `corepack pnpm`。
+pnpm 版本由 `packageManager` 固定，所有平台共用根目錄的 `pnpm-lock.yaml`。
 
 ```sh
-npm run build:web
-npm run start:web
+pnpm build:web
+pnpm start:web
 # 驗證
-npm run test:web
+pnpm test:web
 ```
 
 `dev:web` 啟動本機書架服務（3000）與 Next 開發服務（3001），入口使用 http://localhost:3000。`start:web` 以同一入口提供正式靜態產物與書架 API；只監聽本機，不作為公開託管服務。
 
-`test:web` 先建置，再以獨立測試瀏覽器與暫時 HTTP server 驗證匯入、保存、筆記、編輯、diff、還原、多分頁衝突、儲存失敗、刪除與版本完整性；另驗證固定資料夾、服務重開、不同瀏覽器、來源掃描與舊資料移轉。Windows 預設使用現有 Edge；其他系統需先執行 `npx playwright install chromium`，也可用 `PAGEFORGE_BROWSER_CHANNEL` 指定瀏覽器 channel。測試檔與截圖寫入忽略的 `.preview/`。
+`test:web` 先建置，再以獨立測試瀏覽器與暫時 HTTP server 驗證匯入、保存、筆記、編輯、diff、還原、多分頁衝突、儲存失敗、刪除與版本完整性；另驗證固定資料夾、服務重開、不同瀏覽器、來源掃描與舊資料移轉。Windows 預設使用現有 Edge；其他系統需先執行 `pnpm --filter @pageforge/web exec playwright install chromium`，也可用 `PAGEFORGE_BROWSER_CHANNEL` 指定瀏覽器 channel。測試檔與截圖寫入忽略的 `.preview/`。
 
-Desktop 需先啟動 Web，再於另一個終端執行 `npm run dev:desktop`；打包使用 `npm run build:all`。Desktop `file://` 下的完整文件流程尚未驗證。
+Desktop 需先啟動 Web，再於另一個終端執行 `pnpm dev:desktop`；打包使用 `pnpm build:all`。Desktop `file://` 下的完整文件流程尚未驗證。
 
-Mobile 目前獨立安裝：
+Mobile 已納入 workspace，從根目錄啟動：
 
 ```sh
-cd apps/mobile
-npm install
-npm run start
+pnpm dev:mobile
+pnpm typecheck:mobile
 ```
 
 Desktop 與 Mobile 尚未串接本次 Web 文件能力。登入畫面仍是雛形；本機閱讀免登入。API 目前只有 `selfhost-api/.env.example`，未實作同步或託管。
+Mobile 的共用 domain 引用、型別檢查與 Android Metro／Hermes 匯出已驗證，尚未驗證原生裝置安裝與 EAS 建置。
 
 ## 規格
 
@@ -86,11 +88,11 @@ Desktop 與 Mobile 尚未串接本次 Web 文件能力。登入畫面仍是雛�
 
 路徑、連接埠、容量限制、字級與 diff 設定集中在 `pageforge.config.json`。
 本機覆寫與環境變數用法見 [設定說明](docs/CONFIGURATION.md)。
-可執行 `npm run config:check` 查看實際設定。
+可執行 `pnpm config:check` 查看實際設定。
 
 ## 程式碼與圖片
 
-`npm run format` 整理縮排，`npm run format:check` 檢查格式。
+`pnpm format` 整理縮排，`pnpm format:check` 檢查格式。
 Markdown 本機圖片可放在 `library/collection/assets/`，使用相對路徑引用。
 支援 PNG、JPEG、GIF、WebP；遠端圖片不自動載入。
 模組分工、效能改善與圖片限制見 [架構說明](docs/ARCHITECTURE.md)。

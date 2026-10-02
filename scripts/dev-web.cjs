@@ -1,5 +1,7 @@
 const { spawn } = require('node:child_process')
 const path = require('node:path')
+const { createRequire } = require('node:module')
+const webRequire = createRequire(path.resolve(__dirname, '../apps/web/package.json'))
 const { loadConfig } = require('./config.cjs')
 const { createLibraryServer } = require('./library-server.cjs')
 const config = loadConfig()
@@ -7,7 +9,7 @@ const server = createLibraryServer({ config, devPort: config.server.devPort })
 const child = spawn(
   process.execPath,
   [
-    require.resolve('next/dist/bin/next'),
+    webRequire.resolve('next/dist/bin/next'),
     'dev',
     '--hostname',
     '127.0.0.1',

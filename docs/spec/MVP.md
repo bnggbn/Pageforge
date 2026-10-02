@@ -26,7 +26,7 @@
 
 ## 驗收
 
-`npm run test:web` 會正式建置並驗證：
+`pnpm test:web` 會正式建置並驗證：
 
 - 中文 Markdown／TXT、EPUB 章節、XLSX 工作表、PDF 本機 blob。
 - 重整保存、閱讀位置與字級恢復、章節選擇恢復。

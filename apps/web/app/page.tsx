@@ -461,7 +461,7 @@ export default function HomePage() {
             <p className="dialog-note">
               {store?.mode === 'disk'
                 ? `原始檔、筆記與 VAX 版本都保存在 ${store.label}books/，不會傳到雲端。可直接備份整個 ${store.label} 資料夾。`
-                : '目前是瀏覽器儲存模式。請用 npm run dev:web 或 npm run start:web 啟動資料夾書架；清除網站資料會移除此模式的文件。'}
+                : '目前是瀏覽器儲存模式。請用 pnpm dev:web 或 pnpm start:web 啟動資料夾書架；清除網站資料會移除此模式的文件。'}
             </p>
           </>
         }

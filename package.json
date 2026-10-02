@@ -2,28 +2,32 @@
   "name": "pageforge",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "apps/web",
-    "apps/desktop",
-    "packages/*",
-    "core/*"
-  ],
   "scripts": {
     "dev:web": "node scripts/dev-web.cjs",
     "dev:desktop": "node scripts/dev-desktop.cjs",
-    "dev:mobile": "npm --prefix apps/mobile run start",
-    "dev:all": "concurrently \"npm run dev:web\" \"npm run dev:desktop\"",
-    "build:web": "npm run build -w apps/web",
-    "build:desktop": "npm run build -w apps/desktop",
-    "build:all": "npm run build:web && npm run build:desktop",
-    "test:web": "npm run build:web && node apps/web/tests/workflow.cjs && node apps/web/tests/folder-workflow.cjs && node apps/web/tests/config-workflow.cjs && node apps/web/tests/images-workflow.cjs",
+    "dev:mobile": "pnpm --filter @pageforge/mobile start",
+    "dev:all": "concurrently --kill-others \"pnpm dev:web\" \"pnpm dev:desktop\"",
+    "build:web": "pnpm --filter @pageforge/web build",
+    "build:desktop": "pnpm --filter @pageforge/desktop build",
+    "build:all": "pnpm build:web && pnpm build:desktop",
+    "test:web": "pnpm build:web && node apps/web/tests/workflow.cjs && node apps/web/tests/folder-workflow.cjs && node apps/web/tests/config-workflow.cjs && node apps/web/tests/images-workflow.cjs",
     "start:web": "node scripts/library-server.cjs",
     "config:check": "node -e \"console.log(require('./scripts/config.cjs').loadConfig())\"",
-    "format": "prettier --write apps scripts pageforge.config*.json package.json .prettierrc.json",
-    "format:check": "prettier --check apps scripts pageforge.config*.json package.json .prettierrc.json"
+    "format": "prettier --write apps packages scripts pageforge.config*.json package.json pnpm-workspace.yaml .prettierrc.json",
+    "format:check": "prettier --check apps packages scripts pageforge.config*.json package.json pnpm-workspace.yaml .prettierrc.json",
+    "preinstall": "node scripts/require-pnpm.cjs",
+    "typecheck:mobile": "pnpm --filter @pageforge/mobile exec tsc --noEmit"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
     "prettier": "3.9.9"
+  },
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=20.19.0",
+    "pnpm": "10.34.6"
+  },
+  "dependencies": {
+    "vax-sdk": "1.0.0"
   }
 }

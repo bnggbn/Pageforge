@@ -409,7 +409,7 @@ function createLibraryServer({
       if (fs.existsSync(file) && fs.statSync(file).isDirectory())
         file = path.join(file, 'index.html')
       if (!fs.existsSync(file) || !fs.statSync(file).isFile())
-        fail(404, '找不到頁面，請先執行 npm run build:web。')
+        fail(404, '找不到頁面，請先執行 pnpm build:web。')
       const types = {
         '.html': 'text/html; charset=utf-8',
         '.js': 'text/javascript',

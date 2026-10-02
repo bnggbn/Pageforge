@@ -10,7 +10,7 @@ const dest = join(__dirname, '..', 'renderer')
 
 if (!existsSync(src)) {
   console.error(`Error: web build not found at ${src}`)
-  console.error('Run `npm run build:web` from the repo root first.')
+  console.error('Run `pnpm build:web` from the repo root first.')
   process.exit(1)
 }
 

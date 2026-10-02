@@ -48,3 +48,5 @@ npm-debug.log*
 !/library/collection/04-閱讀札記.txt
 *.tsbuildinfo
 pageforge.config.local.json
+package-lock.json
+**/package-lock.json

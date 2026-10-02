@@ -155,7 +155,7 @@ export async function migrateBrowserDocuments(): Promise<{
   conflicts: string[]
 }> {
   if ((await storageInfo()).mode !== 'disk')
-    throw new Error('請使用 npm run dev:web 或 npm run start:web 啟動固定資料夾書架。')
+    throw new Error('請使用 pnpm dev:web 或 pnpm start:web 啟動固定資料夾書架。')
   const { verifyHistory } = await import('./history')
   const summaries = await browser.listDocuments()
   let imported = 0,

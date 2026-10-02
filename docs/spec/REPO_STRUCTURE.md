@@ -6,7 +6,8 @@
 | --- | --- | --- |
 | `apps/web/` | Next.js Web UI | 匯入、書架、閱讀、筆記、編輯與版本比較 |
 | `apps/desktop/` | Electron 外殼 | 啟動與打包設定 |
-| `apps/mobile/` | Expo App | 首頁雛形，獨立安裝依賴 |
+| `apps/mobile/` | Expo App | 首頁雛形，pnpm workspace 管理依賴 |
+| `packages/domain/` | 共用文件規則 | Web／Mobile 共用格式、筆記、版本與進度型別 |
 | `core/corpus/` | 文件模型與服務 | 預留目錄 |
 | `core/vax/` | 版本日誌 | 預留目錄 |
 | `core/crypto/` | 加密能力 | 預留目錄 |
@@ -18,7 +19,7 @@
 ## 第一版分工
 
 - UI：`apps/web/`，負責匯入、書架、閱讀與錯誤提示。
-- 文件模型與匯入：目前在 `apps/web/lib/documents.ts` 與 `importer.ts`；`core/corpus/` 保留為多端提取位置。
+- 文件模型：純資料型別與格式規則在 `packages/domain/`；Web 的 Blob 文件、儲存錯誤處理與匯入器保留在 `apps/web/lib/`。
 - VAX 版本：`apps/web/lib/history.ts` 直接使用既有 `vax-sdk 1.0.0`，建立與驗證版本鏈；`core/vax/` 尚未提取。
 - 本機儲存：`apps/web/lib/storage.ts` 統一存取；`scripts/library-server.cjs` 保存到 library 固定資料夾，`indexed-storage.ts` 保留瀏覽器模式與舊資料移轉。
 - Reader：`apps/web/components/reader/ReaderWorkspace.tsx` 與 `DocumentContent.tsx`；使用捲動模式，舊翻頁元件未開放。

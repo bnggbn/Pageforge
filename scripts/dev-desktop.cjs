@@ -4,7 +4,7 @@ const { loadConfig } = require('./config.cjs')
 const config = loadConfig()
 const child = spawn(
   process.execPath,
-  [process.env.npm_execpath, 'run', 'dev', '-w', 'apps/desktop'],
+  [process.env.npm_execpath, '--filter', '@pageforge/desktop', 'run', 'dev'],
   {
     cwd: path.resolve(__dirname, '..'),
     stdio: 'inherit',

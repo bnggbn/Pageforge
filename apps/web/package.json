@@ -19,7 +19,8 @@
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^4.2.1",
-    "vax-sdk": "^1.0.0"
+    "vax-sdk": "^1.0.0",
+    "@pageforge/domain": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22",
