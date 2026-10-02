@@ -20,7 +20,7 @@
 - UI：`apps/web/`，負責匯入、書架、閱讀與錯誤提示。
 - 文件模型與匯入：目前在 `apps/web/lib/documents.ts` 與 `importer.ts`；`core/corpus/` 保留為多端提取位置。
 - VAX 版本：`apps/web/lib/history.ts` 直接使用既有 `vax-sdk 1.0.0`，建立與驗證版本鏈；`core/vax/` 尚未提取。
-- 本機儲存：`apps/web/lib/storage.ts` 以 IndexedDB transaction 保存來源、版本、摘要與進度。
+- 本機儲存：`apps/web/lib/storage.ts` 統一存取；`scripts/library-server.cjs` 保存到 library 固定資料夾，`indexed-storage.ts` 保留瀏覽器模式與舊資料移轉。
 - Reader：`apps/web/components/reader/ReaderWorkspace.tsx` 與 `DocumentContent.tsx`；使用捲動模式，舊翻頁元件未開放。
 - 測試：`apps/web/tests/` 保存自製格式 fixture 與瀏覽器完整流程測試。
 
@@ -32,7 +32,7 @@
 | --- | --- | --- |
 | 平台 | Web 優先 | 先完成可使用的閱讀流程 |
 | 內容 | Markdown、TXT、PDF、EPUB、XLSX | 依格式區分閱讀、筆記與編輯能力 |
-| 儲存 | IndexedDB | 文件與進度可在本機保存 |
+| 儲存 | library 固定資料夾；靜態部署使用 IndexedDB | 原始檔、版本與進度持續保存 |
 | 進度 | 版本、區塊位置與區塊內比例 | 調整字級與視窗後可定位 |
 | 帳號 | 免登入 | 本機閱讀無需帳號 |
 | 雲端 | 後續規劃 | 先定義同步、權限與維運需求 |
