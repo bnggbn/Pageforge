@@ -10,7 +10,7 @@
     "build:web": "pnpm --filter @pageforge/web build",
     "build:desktop": "pnpm --filter @pageforge/desktop build",
     "build:all": "pnpm build:web && pnpm build:desktop",
-    "test:web": "pnpm build:web && node apps/web/tests/workflow.cjs && node apps/web/tests/folder-workflow.cjs && node apps/web/tests/config-workflow.cjs && node apps/web/tests/images-workflow.cjs && node apps/web/tests/drafts-workflow.cjs",
+    "test:web": "pnpm build:web && node apps/web/tests/workflow.cjs && node apps/web/tests/folder-workflow.cjs && node apps/web/tests/config-workflow.cjs && node apps/web/tests/images-workflow.cjs && node apps/web/tests/drafts-workflow.cjs && node apps/web/tests/sandboxes-workflow.cjs",
     "start:web": "node scripts/library-server.cjs",
     "config:check": "node -e \"console.log(require('./scripts/config.cjs').loadConfig())\"",
     "format": "prettier --write apps packages scripts pageforge.config*.json package.json pnpm-workspace.yaml .prettierrc.json",

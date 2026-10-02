@@ -17,13 +17,34 @@ export interface Note {
 export interface Revision {
   id: string
   parentId: string | null
-  kind: 'import' | 'edit' | 'note' | 'restore'
+  kind: 'import' | 'edit' | 'note' | 'restore' | 'fork' | 'adopt'
   createdAt: string
   content: string
   notes: Note[]
   prevSAI: string
   sai: string
   envelope: string
+  branchId?: string
+  adoptedFrom?: AdoptionSource
+}
+export interface AdoptionSource {
+  branchId: string
+  revisionId: string
+  baseRevisionId: string
+}
+export interface SandboxBranch {
+  id: string
+  documentId: string
+  name: string
+  baseRevisionId: string
+  createdAt: string
+  updatedAt: string
+  revisions: Revision[]
+  archivedAt?: string
+}
+export type SandboxSummary = Omit<SandboxBranch, 'revisions'> & {
+  head: string
+  revisionCount: number
 }
 export interface WorkingCopy {
   id: string
@@ -35,6 +56,7 @@ export interface WorkingCopy {
   quote: string
   location: string
   updatedAt: string
+  branchId?: string
 }
 export interface ReadingPosition {
   revisionId: string

@@ -2,6 +2,7 @@ const { validateRevision } = require('./library/revisions.cjs')
 const { loadConfig, publicConfig } = require('./config.cjs')
 const { serveImage } = require('./library/images.cjs')
 const { createWorkingCopyStore } = require('./library/working-copies.cjs')
+const { createSandboxStore } = require('./library/sandboxes.cjs')
 const http = require('node:http')
 const net = require('node:net')
 const fs = require('node:fs')
@@ -150,7 +151,15 @@ function createLibraryServer({
     originalType: item.originalType,
   })
   const settingsFile = path.join(state, 'settings.json')
-  const drafts = createWorkingCopyStore({ directory, record, config, writeJSON, fail })
+  const branches = createSandboxStore({ directory, record, version, config, writeJSON, fail })
+  const drafts = createWorkingCopyStore({
+    directory,
+    record,
+    config,
+    writeJSON,
+    fail,
+    branch: branches.draftBase,
+  })
   const settings = () =>
     fs.existsSync(settingsFile)
       ? readJSON(settingsFile)
@@ -277,7 +286,7 @@ function createLibraryServer({
           let parent = null
           const ids = new Set()
           for (const revision of revisions) {
-            await validateRevision(doc, revision, parent, config)
+            await validateRevision(doc, revision, parent, config, { allowDetachedAdoption: true })
             if (
               ids.has(revision.id) ||
               (revision.kind === 'restore' &&
@@ -333,6 +342,30 @@ function createLibraryServer({
             return send(res, { saved: true })
           }
         }
+        const branchRoute =
+          /^\/documents\/([^/]+)\/branches(?:\/([^/]+)(?:\/(revisions|state))?)?$/.exec(route)
+        if (branchRoute) {
+          const [, id, branchId, action] = branchRoute
+          if (req.method === 'GET' && !action)
+            return send(res, branchId ? branches.load(id, branchId) : branches.list(id))
+          if (req.method === 'POST') {
+            const input = await readBody(req, config)
+            if (!branchId) return send(res, await branches.create(id, input), 201)
+            if (action === 'revisions')
+              return send(
+                res,
+                await branches.append(
+                  id,
+                  branchId,
+                  input.expectedHead,
+                  input.revision,
+                  input.response === 'revision',
+                ),
+              )
+            if (action === 'state')
+              return send(res, branches.archive(id, branchId, input.expectedHead, input.archived))
+          }
+        }
         const match = /^\/documents\/([^/]+)(?:\/(revisions|progress))?$/.exec(route)
         if (match) {
           const [, id, action] = match
@@ -351,7 +384,11 @@ function createLibraryServer({
             if (previous.revisionIds.at(-1) !== expectedHead)
               fail(409, '文件已在另一個分頁修改。請重新載入；未保存的文字仍保留在編輯器中。')
             const parent = version(id, expectedHead)
-            await validateRevision(previous.document, revision, parent, config)
+            const adoption =
+              revision?.kind === 'adopt'
+                ? await branches.adoption(id, revision.adoptedFrom)
+                : undefined
+            await validateRevision(previous.document, revision, parent, config, { adoption })
             if (
               previous.revisionIds.includes(revision.id) ||
               (revision.kind === 'restore' &&

@@ -1,8 +1,8 @@
 # 本機文件與版本模型
 
-目前實作位於 `apps/web/lib/`，固定資料夾服務在 `scripts/library-server.cjs`。預設使用硬碟書架，單獨靜態部署使用 IndexedDB `pageforge-library`（schema version 2，原子升級舊資料庫）作為另一種模式。
+目前實作位於 `apps/web/lib/`，固定資料夾服務在 `scripts/library-server.cjs`。預設使用硬碟書架，單獨靜態部署使用 IndexedDB `pageforge-library`（schema version 3，原子升級舊資料庫）作為另一種模式。
 
-後續 Hash／DAG、Fork／Adopt、Temp Branch、雲端內容定址儲存與獨立會話鏈，見
+整份文字文件的 Fork／Adopt 已實作；後續段落分支、雲端內容定址儲存與獨立會話鏈，見
 [Local-First 架構提案](LOCAL_FIRST_ARCHITECTURE.md)。提案中的節點欄位尚未取代以下實作；
 正式導入前需另定資料 schema、舊版本遷移、主線 head 比對與同步合約。
 
@@ -23,8 +23,9 @@
 - `progress`：文件 ID、版本 ID、穩定區塊標記、區塊內比例、百分比、章節／工作表或 PDF 頁碼。
 - `settings`：閱讀字級。
 - `drafts`：以 UUID 區分工作草稿，依 documentId 建立索引；版本 token 防止另一分頁覆寫。
+- `branches`：以 UUID 區分沙盒，依 documentId 建立索引；包含主線來源版本、名稱、沙盒版本鏈與選用封存時間。
 
-文件與摘要在同一 transaction 建立；刪除文件、摘要與進度也在同一 transaction 完成。每次版本儲存先比對預期 head，再原子追加版本與更新摘要。另一分頁已修改／刪除時拒絕覆寫，編輯器保留未保存文字。
+文件與摘要在同一 transaction 建立；刪除文件、摘要、進度、草稿與沙盒也在同一 transaction 完成。每次版本儲存先比對預期 head，再原子追加版本與更新摘要。另一分頁已修改／刪除時拒絕覆寫，編輯器保留未保存文字。v1／v2 升級只新增 store，不改寫原始檔或既有 canonical 事件。
 
 ## 原始檔與投影
 
@@ -34,13 +35,41 @@
 
 每個版本保存：UUID、parent revision ID、事件種類、UTC 建立時間、文字快照、筆記快照、prevSAI、SAI、JCS canonical SAE。
 
-事件種類為 `import`／`edit`／`note`／`restore`。文字編輯與筆記操作都新增版本；還原指定舊快照也建立新版本，舊歷史保留。
+事件種類為 `import`／`edit`／`note`／`restore`／`fork`／`adopt`。文字編輯與筆記操作都新增版本；還原指定舊快照也建立新版本，舊歷史保留。
 
 SAE 的 `sdto` 包含文件 ID、版本 ID、父版本 ID、原始檔 hash、文字 hash、筆記 hash、文件投影 hash，以及還原來源 ID。投影 hash 涵蓋標題、原始檔名、格式、章節與工作表資料。
 
 使用既有 `vax-sdk 1.0.0` 的 JCS、genesis 與 SAI 實作。每份文件有獨立 actor／salt／genesis，開啟時檢查原始檔、快照內容與鏈結。此驗證沒有簽章或外部可信 head，因此不宣稱能抵抗本機整條鏈重寫或尾端截斷。
 
 版本 diff 使用 jsdiff 比較兩個已保存快照的文字或筆記，限制輸入總長度 1 MiB、執行時間與 edit length。超過限制提示匯出後外部比較。此功能屬於 Pageforge，不修改 VAX 上游。
+
+## 思考沙盒與採納
+
+沙盒模型為 `id`、`documentId`、`name`、`baseRevisionId`、建立／更新時間、
+`revisions` 與選用 `archivedAt`。來源是此文件任一已保存主線版本；目前只支援整份
+Markdown／TXT，沙盒內直接編輯文字，筆記沿用建立時的快照。
+
+首個 `fork` 節點必須與來源的文字及筆記相同，parentId／prevSAI 指向主線來源。
+後續 `edit` 節點指向沙盒上一版本。所有沙盒節點將 `branchId` 同時存於外層與 canonical SAE，
+不重寫舊主線事件。讀取時將主線至來源的前綴與沙盒鏈組合驗證；不同 scope、重複 ID、
+不連續鏈或改動快照均拒絕。
+
+固定資料夾在 `books/{document-id}/branches/{branch-id}/versions/` 保存不可覆寫節點，
+同層 manifest 保存來源與有效 head。建立先寫完整暫存目錄再 rename；追加先寫節點再原子切換 manifest，
+驗證前後均檢查 expectedHead。IndexedDB 在同一 transaction 比對 head 並追加，失敗回滾。
+
+採納只使用已保存沙盒文字，保留目前主線筆記，新增 `adopt` 主線節點；
+`adoptedFrom = { branchId, revisionId, baseRevisionId }` 同時寫入外層與 canonical SAE。
+介面先比較目前主線與沙盒的已保存 head，主線變更後需重新載入、比較。
+保存仍以主線 expectedHead 原子判斷，過期採納拒絕。來源驗證不依賴沙盒仍是最新 head，
+已採納的舊來源永遠保留。未提交主線文字維持原草稿基準，不因採納而消失。
+
+封存是可復原的 metadata 更新，不刪除版本或草稿，也計入 `limits.sandboxCount`。
+刪除整份文件才一起移除／移到垃圾區。沙盒名稱上限由 `limits.sandboxNameCharacters` 設定。
+目前沙盒來源只指向主線，未支援沙盒再分支、段落採納、三方合併或完整 DAG 圖形介面。
+
+瀏覽器書架移轉會複製沙盒版本與草稿；重試使用相同節點 ID，不覆寫分歧分支。
+相同來源但文件 ID 不同時保留瀏覽器資料並提示，不自動改寫事件中的文件 ID。
 
 ## 位置與筆記
 
@@ -54,8 +83,9 @@ PDF 不讀取內建閱讀器的捲動事件，使用手動保存的頁碼書籤�
 
 ## 工作草稿
 
-文字與未提交筆記分開於正式版本保存。每份草稿含 ID、文件 ID、基準版本 ID、
-版本 token、文字、筆記內文／引用／位置與 UTC 更新時間。
+文字與未提交筆記分開於正式版本保存。每份草稿含 ID、文件 ID、基準版本 ID、選用沙盒 branchId、
+版本 token、文字、筆記內文／引用／位置與 UTC 更新時間。主線與沙盒依 branchId 分開恢復，
+切換沙盒先等待自己的草稿落盤。
 固定資料夾儲存在 `library/books/{id}/drafts/{draft-id}.json`，使用暫存檔、fsync 與 rename。
 瀏覽器模式在檢查文件仍存在的同一 transaction 寫入 drafts。
 
@@ -71,4 +101,7 @@ PDF 不讀取內建閱讀器的捲動事件，使用手動保存的頁碼書籤�
 
 ## 匯出
 
-可下載原始檔、匯出目前 Markdown／TXT，以及輸出 `pageforge-history/1` 的歷史 JSON。JSON 不包含二進位原始檔與閱讀位置，尚無完整備份封裝與還原匯入；固定資料夾模式可在關閉服務後直接複製 library 備份。
+可下載原始檔、匯出目前 Markdown／TXT，以及輸出 `pageforge-history/1` 的主線歷史 JSON。
+主線 JSON 含採納來源 ID，但不包含沙盒節點、草稿、二進位原始檔與閱讀位置；
+匯入主線鏈可驗證事件本身，完整來源證明仍需保留沙盒資料。
+尚無完整備份封裝與還原匯入；固定資料夾模式可在關閉服務後直接複製 library 備份。

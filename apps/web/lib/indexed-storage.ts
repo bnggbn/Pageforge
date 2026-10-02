@@ -1,4 +1,5 @@
 import { config } from './config'
+import { marshal } from 'vax-sdk'
 import {
   latest,
   summary,
@@ -19,7 +20,7 @@ export function database(): Promise<IDBDatabase> {
       reject(new Error('此瀏覽器無法使用本機儲存。'))
       return
     }
-    const request = indexedDB.open('pageforge-library', 2)
+    const request = indexedDB.open('pageforge-library', 3)
     request.onupgradeneeded = () => {
       const db = request.result
       if (!db.objectStoreNames.contains('documents')) {
@@ -32,6 +33,10 @@ export function database(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('drafts')) {
         const drafts = db.createObjectStore('drafts', { keyPath: 'id' })
         drafts.createIndex('document', 'documentId')
+      }
+      if (!db.objectStoreNames.contains('branches')) {
+        const branches = db.createObjectStore('branches', { keyPath: 'id' })
+        branches.createIndex('document', 'documentId')
       }
     }
     request.onblocked = () => {
@@ -97,7 +102,7 @@ export async function appendRevision(
 ): Promise<LibraryDocument> {
   const db = await database()
   return new Promise((resolve, reject) => {
-    const tx = db.transaction(['documents', 'summaries', 'progress'], 'readwrite')
+    const tx = db.transaction(['documents', 'summaries', 'progress', 'branches'], 'readwrite')
     let updated: LibraryDocument
     let failure: Error | null = null
     const req = tx.objectStore('documents').get(id)
@@ -105,6 +110,8 @@ export async function appendRevision(
       const doc: LibraryDocument | undefined = req.result
       if (
         !doc ||
+        revision.branchId ||
+        revision.kind === 'fork' ||
         latest(doc).id !== expectedHead ||
         revision.parentId !== expectedHead ||
         revision.prevSAI !== latest(doc).sai
@@ -115,15 +122,42 @@ export async function appendRevision(
         tx.abort()
         return
       }
-      updated = { ...doc, updatedAt: revision.createdAt, revisions: [...doc.revisions, revision] }
-      const changedContent = latest(doc).content !== revision.content
-      tx.objectStore('documents').put(updated)
-      const metaReq = tx.objectStore('summaries').get(id)
-      metaReq.onsuccess = () =>
-        tx
-          .objectStore('summaries')
-          .put(summary(updated, changedContent ? 0 : (metaReq.result?.progress ?? 0)))
-      if (changedContent) tx.objectStore('progress').delete(id)
+      const publish = () => {
+        updated = { ...doc, updatedAt: revision.createdAt, revisions: [...doc.revisions, revision] }
+        const changedContent = latest(doc).content !== revision.content
+        tx.objectStore('documents').put(updated)
+        const metaReq = tx.objectStore('summaries').get(id)
+        metaReq.onsuccess = () =>
+          tx
+            .objectStore('summaries')
+            .put(summary(updated, changedContent ? 0 : (metaReq.result?.progress ?? 0)))
+        if (changedContent) tx.objectStore('progress').delete(id)
+      }
+      if (revision.kind === 'adopt') {
+        const source = revision.adoptedFrom
+        if (!source) {
+          failure = new Error('採納來源無效。')
+          tx.abort()
+          return
+        }
+        const branch = tx.objectStore('branches').get(source.branchId)
+        branch.onsuccess = () => {
+          const stored = branch.result
+          const node = stored?.revisions.find((item: Revision) => item.id === source.revisionId)
+          if (
+            stored?.documentId !== id ||
+            stored.baseRevisionId !== source.baseRevisionId ||
+            !node ||
+            node.content !== revision.content ||
+            marshal(latest(doc).notes).toString('utf8') !== marshal(revision.notes).toString('utf8')
+          ) {
+            failure = new Error('採納來源或主線筆記不一致。')
+            tx.abort()
+            return
+          }
+          publish()
+        }
+      } else publish()
     }
     tx.oncomplete = () => {
       announce()
@@ -135,15 +169,20 @@ export async function appendRevision(
 }
 export async function deleteDocument(id: string): Promise<void> {
   const db = await database()
-  const tx = db.transaction(['documents', 'summaries', 'progress', 'drafts'], 'readwrite')
+  const tx = db.transaction(
+    ['documents', 'summaries', 'progress', 'drafts', 'branches'],
+    'readwrite',
+  )
   const done = completed(tx)
   for (const name of ['documents', 'summaries', 'progress']) tx.objectStore(name).delete(id)
-  const drafts = tx.objectStore('drafts').index('document').openKeyCursor(id)
-  drafts.onsuccess = () => {
-    const cursor = drafts.result
-    if (cursor) {
-      tx.objectStore('drafts').delete(cursor.primaryKey)
-      cursor.continue()
+  for (const store of ['drafts', 'branches']) {
+    const request = tx.objectStore(store).index('document').openKeyCursor(id)
+    request.onsuccess = () => {
+      const cursor = request.result
+      if (cursor) {
+        tx.objectStore(store).delete(cursor.primaryKey)
+        cursor.continue()
+      }
     }
   }
   await done
@@ -203,7 +242,7 @@ export async function listWorkingCopies(id: string): Promise<WorkingCopy[]> {
 export async function saveWorkingCopy(copy: WorkingCopy, expectedVersion: string | null) {
   const db = await database()
   return new Promise<void>((resolve, reject) => {
-    const tx = db.transaction(['documents', 'drafts'], 'readwrite')
+    const tx = db.transaction(['documents', 'drafts', 'branches'], 'readwrite')
     let failure: Error | null = null
     const fail = (error: Error) => {
       failure = error
@@ -212,28 +251,49 @@ export async function saveWorkingCopy(copy: WorkingCopy, expectedVersion: string
     const document = tx.objectStore('documents').get(copy.documentId)
     document.onsuccess = () => {
       const doc: LibraryDocument | undefined = document.result
-      if (!doc || !doc.revisions.some((revision) => revision.id === copy.baseRevisionId)) {
+      if (!doc) {
         fail(new Error('文件或草稿來源已不存在，草稿未保存。'))
         return
       }
-      const stored = tx.objectStore('drafts').get(copy.id)
-      stored.onsuccess = () => {
-        if (
-          (stored.result?.version ?? null) !== expectedVersion ||
-          (stored.result && stored.result.documentId !== copy.documentId)
-        ) {
-          fail(new WorkingCopyConflict())
-          return
-        }
-        const count = tx.objectStore('drafts').index('document').count(copy.documentId)
-        count.onsuccess = () => {
-          if (!stored.result && count.result >= config.limits.workingCopyCount) {
-            fail(new Error('此文件的草稿數量已達上限，請先整理保留的草稿。'))
+      const save = () => {
+        const stored = tx.objectStore('drafts').get(copy.id)
+        stored.onsuccess = () => {
+          if (
+            (stored.result?.version ?? null) !== expectedVersion ||
+            (stored.result &&
+              (stored.result.documentId !== copy.documentId ||
+                stored.result.branchId !== copy.branchId))
+          ) {
+            fail(new WorkingCopyConflict())
             return
           }
-          tx.objectStore('drafts').put(copy)
+          const count = tx.objectStore('drafts').index('document').count(copy.documentId)
+          count.onsuccess = () => {
+            if (!stored.result && count.result >= config.limits.workingCopyCount) {
+              fail(new Error('此文件的草稿數量已達上限，請先整理保留的草稿。'))
+              return
+            }
+            tx.objectStore('drafts').put(copy)
+          }
         }
       }
+      if (copy.branchId) {
+        const branch = tx.objectStore('branches').get(copy.branchId)
+        branch.onsuccess = () => {
+          if (
+            branch.result?.documentId !== doc.id ||
+            ![
+              branch.result.baseRevisionId,
+              ...branch.result.revisions.map((item: Revision) => item.id),
+            ].includes(copy.baseRevisionId)
+          ) {
+            fail(new Error('沙盒草稿來源不存在。'))
+            return
+          }
+          save()
+        }
+      } else if (doc.revisions.some((revision) => revision.id === copy.baseRevisionId)) save()
+      else fail(new Error('草稿來源不存在。'))
     }
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error ?? new Error('草稿保存失敗。'))

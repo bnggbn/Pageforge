@@ -9,6 +9,8 @@
     "snapshotNotesMiB": 5,
     "revisionCount": 10000,
     "workingCopyCount": 30,
+    "sandboxCount": 30,
+    "sandboxNameCharacters": 80,
     "archiveMiB": 40,
     "archiveEntryMiB": 15,
     "archiveEntries": 2000,

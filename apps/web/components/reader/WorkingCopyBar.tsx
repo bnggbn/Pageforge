@@ -5,6 +5,7 @@ interface Props {
   error: string
   restored: boolean
   stale: boolean
+  staleMessage?: string
   copies: WorkingCopy[]
   selectedId: string
   busy: boolean
@@ -25,7 +26,11 @@ export function WorkingCopyBar(props: Props) {
         {labels[props.status]}
         {props.restored ? ' · 已恢復上次草稿' : ''}
       </span>
-      {props.stale && <span className="text-rust">草稿基於舊版本；主線更新已保留。</span>}
+      {props.stale && (
+        <span className="text-rust">
+          {props.staleMessage ?? '草稿基於舊版本；主線更新已保留。'}
+        </span>
+      )}
       {props.copies.length > 1 && (
         <select
           aria-label="選擇保留草稿"

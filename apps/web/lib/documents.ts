@@ -23,8 +23,10 @@ export interface LibraryDocument {
   salt: string
   genesis: string
   revisions: Revision[]
+  /** Present only in an in-memory sandbox projection; original document storage stays unchanged. */
+  branchId?: string
 }
-export function latest(doc: LibraryDocument): Revision {
+export function latest(doc: { revisions: Revision[] }): Revision {
   return doc.revisions[doc.revisions.length - 1]
 }
 export function summary(doc: LibraryDocument, progress = 0): DocumentSummary {

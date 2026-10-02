@@ -2,7 +2,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
 
-function createWorkingCopyStore({ directory, record, config, writeJSON, fail }) {
+function createWorkingCopyStore({ directory, record, config, writeJSON, fail, branch }) {
   const folder = (id) => {
     record(id)
     const target = path.join(directory(id), 'drafts')
@@ -32,13 +32,17 @@ function createWorkingCopyStore({ directory, record, config, writeJSON, fail }) 
   }
   const save = (id, copyId, copy, expectedVersion) => {
     const doc = record(id)
+    const branchData = copy?.branchId ? branch(id, copy.branchId) : null
+    const baseIds = branchData
+      ? [branchData.baseRevisionId, ...branchData.revisionIds]
+      : doc.revisionIds
     const target = file(id, copyId)
     if (
       !copy ||
       copy.id !== copyId ||
       copy.documentId !== id ||
       !uuid.test(copy.version) ||
-      !doc.revisionIds.includes(copy.baseRevisionId) ||
+      !baseIds.includes(copy.baseRevisionId) ||
       !['content', 'body', 'quote', 'location', 'updatedAt'].every(
         (key) => typeof copy[key] === 'string',
       ) ||
@@ -54,7 +58,11 @@ function createWorkingCopyStore({ directory, record, config, writeJSON, fail }) 
     )
       fail(413, '草稿超過設定容量。')
     const current = read(target)
-    if ((current?.version ?? null) !== expectedVersion) fail(409, '此草稿已由另一個分頁更新。')
+    if (
+      (current?.version ?? null) !== expectedVersion ||
+      (current && current.branchId !== copy.branchId)
+    )
+      fail(409, '此草稿已由另一個分頁更新。')
     if (!current && list(id).length >= config.limits.workingCopyCount)
       fail(413, '此文件的草稿數量已達上限，請先整理保留的草稿。')
     fs.mkdirSync(folder(id), { recursive: true })
@@ -71,6 +79,7 @@ function createWorkingCopyStore({ directory, record, config, writeJSON, fail }) 
       'updatedAt',
     ])
       saved[key] = copy[key]
+    if (branchData) saved.branchId = branchData.id
     writeJSON(target, saved)
   }
   const remove = (id, copyId, expectedVersion) => {

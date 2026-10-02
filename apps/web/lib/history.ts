@@ -7,7 +7,7 @@ import {
   fromHex,
   marshal,
 } from 'vax-sdk'
-import type { LibraryDocument, Revision, Note } from './documents'
+import type { LibraryDocument, Revision, Note, AdoptionSource } from './documents'
 
 // vax-sdk 1.0.0 canonicalizes with Buffer; its crypto primitives use Web Crypto.
 const globals = globalThis as unknown as { Buffer?: typeof Buffer }
@@ -33,11 +33,13 @@ export async function createRevision(
     | 'originalHash'
     | 'genesis'
     | 'revisions'
+    | 'branchId'
   >,
   kind: Revision['kind'],
   content: string,
   notes: Note[],
   restoredFrom: string | null = null,
+  adoptedFrom?: AdoptionSource,
 ): Promise<Revision> {
   const parent = doc.revisions.at(-1)
   const id = crypto.randomUUID()
@@ -50,6 +52,8 @@ export async function createRevision(
     contentHash: await digest(content),
     notesHash: await digest(marshal(notes).toString('utf8')),
     restoredFrom,
+    ...(doc.branchId ? { branchId: doc.branchId } : {}),
+    ...(adoptedFrom ? { adoptedFrom } : {}),
     viewHash: await digest(
       marshal({
         title: doc.title,
@@ -74,6 +78,8 @@ export async function createRevision(
     prevSAI,
     sai: toHex(await computeSAI(fromHex(prevSAI), new TextEncoder().encode(envelope))),
     envelope,
+    ...(doc.branchId ? { branchId: doc.branchId } : {}),
+    ...(adoptedFrom ? { adoptedFrom } : {}),
   }
 }
 export async function verifyHistory(doc: LibraryDocument): Promise<void> {
@@ -94,12 +100,21 @@ export async function verifyHistory(doc: LibraryDocument): Promise<void> {
   )
   let parentId: string | null = null
   const ids = new Set<string>()
+  let inBranch = false
   for (const revision of doc.revisions) {
     if (
-      !['import', 'edit', 'note', 'restore'].includes(revision.kind) ||
+      !['import', 'edit', 'note', 'restore', 'fork', 'adopt'].includes(revision.kind) ||
       (parentId === null ? revision.kind !== 'import' : revision.kind === 'import')
     )
       throw new Error('版本事件順序無效。')
+    if (revision.branchId) {
+      if (
+        revision.branchId !== doc.branchId ||
+        (!inBranch ? revision.kind !== 'fork' : !['edit', 'note'].includes(revision.kind))
+      )
+        throw new Error('沙盒版本來源或事件順序無效。')
+      inBranch = true
+    } else if (inBranch || revision.kind === 'fork') throw new Error('沙盒版本鏈不連續。')
     if (revision.prevSAI !== expected || revision.parentId !== parentId || ids.has(revision.id))
       throw new Error('版本鏈不連續，已停止編輯。')
     const env = JSON.parse(revision.envelope)
@@ -110,6 +125,24 @@ export async function verifyHistory(doc: LibraryDocument): Promise<void> {
     )
       throw new Error('版本事件驗證失敗。')
     const data = env.sdto
+    if (
+      data.branchId !== revision.branchId ||
+      marshal(data.adoptedFrom ?? null).toString('utf8') !==
+        marshal(revision.adoptedFrom ?? null).toString('utf8') ||
+      (revision.kind === 'adopt' ? !revision.adoptedFrom : !!revision.adoptedFrom)
+    )
+      throw new Error('版本來源紀錄無效。')
+    if (
+      revision.adoptedFrom &&
+      !['branchId', 'revisionId', 'baseRevisionId'].every((key) => {
+        const value = revision.adoptedFrom![key as keyof AdoptionSource]
+        return (
+          typeof value === 'string' &&
+          /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value)
+        )
+      })
+    )
+      throw new Error('採納來源 ID 無效。')
     if (revision.kind === 'restore' && !ids.has(data.restoredFrom))
       throw new Error('還原來源不在此文件的版本鏈中。')
     if (
@@ -130,4 +163,5 @@ export async function verifyHistory(doc: LibraryDocument): Promise<void> {
     parentId = revision.id
     expected = computed
   }
+  if (doc.branchId && !inBranch) throw new Error('沙盒缺少初始版本。')
 }

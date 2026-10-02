@@ -8,8 +8,11 @@ import type {
   ReadingPosition,
   Revision,
   WorkingCopy,
+  SandboxBranch,
+  SandboxSummary,
 } from './documents'
 import { latest, WorkingCopyConflict } from './documents'
+import * as sandboxes from './indexed-sandboxes'
 
 export { database, changeSource, announce } from './indexed-storage'
 export interface StorageInfo {
@@ -162,6 +165,56 @@ export async function removeWorkingCopy(id: string, copyId: string, expectedVers
     return browser.removeWorkingCopy(id, copyId, expectedVersion)
   await api(`/documents/${encodeURIComponent(id)}/drafts/${copyId}`, 'DELETE', { expectedVersion })
 }
+export async function listSandboxes(id: string): Promise<SandboxSummary[]> {
+  return (await storageInfo()).mode === 'disk'
+    ? api(`/documents/${id}/branches`)
+    : sandboxes.listSandboxes(id)
+}
+async function sandboxAPI(route: string, data: unknown): Promise<SandboxBranch> {
+  const saved = await api<SandboxBranch>(route, 'POST', data)
+  browser.announce()
+  return saved
+}
+export async function loadSandbox(id: string, branchId: string): Promise<SandboxBranch> {
+  return (await storageInfo()).mode === 'disk'
+    ? api(`/documents/${id}/branches/${branchId}`)
+    : sandboxes.loadSandbox(id, branchId)
+}
+export async function insertSandbox(branch: SandboxBranch): Promise<SandboxBranch> {
+  return (await storageInfo()).mode === 'disk'
+    ? sandboxAPI(`/documents/${branch.documentId}/branches`, {
+        branchId: branch.id,
+        name: branch.name,
+        baseRevisionId: branch.baseRevisionId,
+        revision: branch.revisions[0],
+      })
+    : sandboxes.insertSandbox(branch)
+}
+export async function appendSandbox(
+  branch: SandboxBranch,
+  expectedHead: string,
+  revision: Revision,
+): Promise<SandboxBranch> {
+  if ((await storageInfo()).mode !== 'disk')
+    return sandboxes.appendSandbox(branch.documentId, branch.id, expectedHead, revision)
+  const saved = await api<{ revision: Revision; updatedAt: string }>(
+    `/documents/${branch.documentId}/branches/${branch.id}/revisions`,
+    'POST',
+    { expectedHead, revision, response: 'revision' },
+  )
+  browser.announce()
+  return { ...branch, updatedAt: saved.updatedAt, revisions: [...branch.revisions, saved.revision] }
+}
+export async function archiveSandbox(
+  id: string,
+  branchId: string,
+  expectedHead: string,
+  archived: boolean,
+): Promise<SandboxBranch> {
+  return (await storageInfo()).mode === 'disk'
+    ? sandboxAPI(`/documents/${id}/branches/${branchId}/state`, { expectedHead, archived })
+    : sandboxes.archiveSandbox(id, branchId, expectedHead, archived)
+}
 export async function collectionFiles(): Promise<{ name: string; size: number; url: string }[]> {
   return api('/collection')
 }
@@ -181,6 +234,7 @@ export async function migrateBrowserDocuments(): Promise<{
   if ((await storageInfo()).mode !== 'disk')
     throw new Error('請使用 pnpm dev:web 或 pnpm start:web 啟動固定資料夾書架。')
   const { verifyHistory } = await import('./history')
+  const { migrateWorkingData } = await import('./browser-migration')
   const summaries = await browser.listDocuments()
   let imported = 0,
     skipped = 0
@@ -195,9 +249,15 @@ export async function migrateBrowserDocuments(): Promise<{
       if (
         stored &&
         doc.revisions.every((revision, index) => stored.revisions[index]?.sai === revision.sai)
-      )
+      ) {
         skipped++
-      else conflicts.push(doc.title)
+        if (stored.id === doc.id) conflicts.push(...(await migrateWorkingData(doc)))
+        else if (
+          (await browser.listWorkingCopies(doc.id)).length ||
+          (await sandboxes.listSandboxes(doc.id)).length
+        )
+          conflicts.push(`${doc.title}（來源 ID 不同，草稿與沙盒留在瀏覽器）`)
+      } else conflicts.push(doc.title)
       continue
     }
     try {
@@ -216,6 +276,7 @@ export async function migrateBrowserDocuments(): Promise<{
     )
       await saveProgress(doc.id, { ...position, revisionId: latest(doc).id })
     imported++
+    conflicts.push(...(await migrateWorkingData(doc)))
   }
   browser.announce()
   return { imported, skipped, conflicts }

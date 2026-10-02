@@ -26,10 +26,14 @@ Web 畫面透過 `lib/storage.ts` 使用儲存介面：本機服務模式連接 
 ## 閱讀與版本
 
 - `ReaderWorkspace` 協調閱讀與保存；`NotesPanel` 和 `RevisionHistory` 分別管理筆記與版本畫面。
+- `SandboxPanel` 管理整份文字的試寫、比較與採納；`VersionDiff` 共用單欄差異呈現。
+- `useWorkingCopy` 管理防抖暫存、版本 token 與恢復；主線和沙盒分別持有 session，切換前等待落盤。
+- `lib/sandboxes.ts` 建立與驗證分支投影；`indexed-sandboxes.ts`、`scripts/library/sandboxes.cjs` 實作各自的原子分支保存；`browser-migration.ts` 複製沙盒與草稿，保留分歧來源。
 - `DocumentContent` 負責文字排版，使用 React memo；筆記輸入與進度更新不重新解析 Markdown。
 - `reading-anchor.ts` 負責段落定位；保留段落節點清單，捲動定位採二分查找，降低 DOM 量測次數。
 - `useRevisionDiff` 管理背景工作與結果生命週期；diff 在 Web Worker 執行，切換比較或離開時取消舊工作，避免舊結果覆蓋新選擇。
 - 保存新版的前端請求使用增量回應，只接收已保存版本；保留已載入的原始檔，不重傳二進位與全部歷史。重新開啟仍完整載入並驗證歷史。
+- 沙盒追加同樣只回傳新節點；固定資料夾草稿檢查只讀沙盒 manifest 的來源 ID，不在每次暫存讀取全部版本快照。
 - `history.ts` 負責前端 VAX 建立與驗證；`scripts/library/revisions.cjs` 負責服務端保存前的驗證。
 - `scripts/library-server.cjs` 協調 HTTP 路由、資料夾保存與開發代理；圖片處理由 `scripts/library/images.cjs` 負責。
 

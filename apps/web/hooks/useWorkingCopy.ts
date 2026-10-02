@@ -21,6 +21,7 @@ interface Session {
   version: string | null
   values: Values
   saved: string
+  branchId?: string
 }
 const emptyNote = { body: '', quote: '', location: '全文筆記' }
 const signature = (values: Values) => JSON.stringify(values)
@@ -78,6 +79,7 @@ export function useWorkingCopy() {
               baseRevisionId: session.baseRevisionId,
               version: crypto.randomUUID(),
               updatedAt: new Date().toISOString(),
+              ...(session.branchId ? { branchId: session.branchId } : {}),
             }
             try {
               await saveWorkingCopy(copy, session.version)
@@ -115,10 +117,14 @@ export function useWorkingCopy() {
 
   const open = useCallback(async (doc: LibraryDocument, selectedId?: string) => {
     await queue.current.catch(() => {})
-    const copies = (await listWorkingCopies(doc.id)).sort((a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt),
-    )
-    const preferred = selectedId ?? (active.current?.documentId === doc.id ? active.current.id : '')
+    const copies = (await listWorkingCopies(doc.id))
+      .filter((copy) => copy.branchId === doc.branchId)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    const preferred =
+      selectedId ??
+      (active.current?.documentId === doc.id && active.current.branchId === doc.branchId
+        ? active.current.id
+        : '')
     const copy = copies.find((item) => item.id === preferred) ?? copies[0]
     if (selectedId && !copies.some((item) => item.id === selectedId))
       throw new Error('此草稿已不存在。')
@@ -130,6 +136,8 @@ export function useWorkingCopy() {
           location: copy.location,
         }
       : { content: latest(doc).content, ...emptyNote }
+    if (copy && !doc.revisions.some((revision) => revision.id === copy.baseRevisionId))
+      throw new Error('草稿來源版本不存在，已停止載入。')
     const base =
       doc.revisions.find((revision) => revision.id === copy?.baseRevisionId) ?? latest(doc)
     active.current = {
@@ -140,6 +148,7 @@ export function useWorkingCopy() {
       version: copy?.version ?? null,
       values,
       saved: signature(values),
+      branchId: doc.branchId,
     }
     setView({
       ...values,
@@ -176,8 +185,14 @@ export function useWorkingCopy() {
       await queue.current.catch(() => {})
       const session = active.current
       if (!session) return
-      session.baseRevisionId = latest(doc).id
-      session.baseline = latest(doc).content
+      const preserveBase =
+        !clearContent &&
+        session.values.content !== session.baseline &&
+        session.baseline !== latest(doc).content
+      if (!preserveBase) {
+        session.baseRevisionId = latest(doc).id
+        session.baseline = latest(doc).content
+      }
       session.values = {
         ...session.values,
         ...(clearContent ? { content: latest(doc).content } : {}),
@@ -204,7 +219,9 @@ export function useWorkingCopy() {
     active.current = null
     // Start fresh, leaving other tabs' copies available in the selector.
     const values = { content: latest(doc).content, ...emptyNote }
-    const copies = await listWorkingCopies(doc.id)
+    const copies = (await listWorkingCopies(doc.id)).filter(
+      (copy) => copy.branchId === doc.branchId,
+    )
     active.current = {
       documentId: doc.id,
       baseRevisionId: latest(doc).id,
@@ -213,6 +230,7 @@ export function useWorkingCopy() {
       version: null,
       values,
       saved: signature(values),
+      branchId: doc.branchId,
     }
     setView({
       ...values,

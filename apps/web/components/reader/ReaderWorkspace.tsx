@@ -11,6 +11,7 @@ import { exportFile } from '@/lib/download'
 import { DocumentContent } from './DocumentContent'
 import { DocumentProse } from './DocumentProse'
 import { WorkingCopyBar } from './WorkingCopyBar'
+import { SandboxPanel } from './SandboxPanel'
 import { useWorkingCopy } from '@/hooks/useWorkingCopy'
 import {
   EDITABLE,
@@ -21,6 +22,7 @@ import {
   type Note,
   type ReadingPosition,
   type Revision,
+  type AdoptionSource,
 } from '@/lib/documents'
 import {
   appendRevision,
@@ -34,7 +36,7 @@ import {
 } from '@/lib/storage'
 import { createRevision, verifyHistory } from '@/lib/history'
 
-type Tab = 'read' | 'edit' | 'notes' | 'history'
+type Tab = 'read' | 'edit' | 'notes' | 'history' | 'sandbox'
 
 export function ReaderWorkspace() {
   const [doc, setDoc] = useState<LibraryDocument | null>(null)
@@ -67,6 +69,10 @@ export function ReaderWorkspace() {
   const restore = useRef<ReadingPosition | null>(null)
   const currentDoc = useRef<LibraryDocument | null>(null)
   const mounted = useRef(true)
+  const sandboxFlush = useRef<(() => Promise<void>) | null>(null)
+  const registerSandboxFlush = useCallback((flush: (() => Promise<void>) | null) => {
+    sandboxFlush.current = flush
+  }, [])
   const head = doc ? latest(doc) : null
   const dirty = !!head && draft !== head.content
 
@@ -208,6 +214,7 @@ export function ReaderWorkspace() {
   const changeTab = async (next: Tab) => {
     if (busy) return
     try {
+      await sandboxFlush.current?.()
       await working.flush()
       await flush()
     } catch (e) {
@@ -225,6 +232,7 @@ export function ReaderWorkspace() {
     notes: Note[],
     restoredFrom: string | null = null,
     clearNote = false,
+    adoptedFrom?: AdoptionSource,
   ) => {
     if (!doc || !head || busy || !verified) return false
     setBusy(true)
@@ -233,13 +241,19 @@ export function ReaderWorkspace() {
     try {
       await working.flush()
       await flush()
-      const version = await createRevision(doc, kind, content, notes, restoredFrom)
+      const version = await createRevision(doc, kind, content, notes, restoredFrom, adoptedFrom)
       const updated = await appendRevision(doc, head.id, version)
       setDoc(updated)
       currentDoc.current = updated
-      await working.rebase(updated, kind === 'edit' || kind === 'restore', clearNote).catch((e) => {
-        setError(`版本已保存，但草稿整理失敗：${errorMessage(e)}`)
-      })
+      await working
+        .rebase(
+          updated,
+          kind === 'edit' || (!dirty && (kind === 'restore' || kind === 'adopt')),
+          clearNote,
+        )
+        .catch((e) => {
+          setError(`版本已保存，但草稿整理失敗：${errorMessage(e)}`)
+        })
       setStale(false)
       setFrom(head.id)
       setTo(version.id)
@@ -375,6 +389,7 @@ export function ReaderWorkspace() {
   const activeSection = Math.min(Math.max(0, section), Math.max(0, sections.length - 1))
   const returnToShelf = async () => {
     try {
+      await sandboxFlush.current?.()
       await working.flush()
       await flush()
       window.location.href = '/'
@@ -427,6 +442,7 @@ export function ReaderWorkspace() {
               ['read', '閱讀'],
               ['notes', `筆記 ${head.notes.length}`],
               ...(editable ? [['edit', '編輯文字']] : []),
+              ...(editable ? [['sandbox', '思考沙盒']] : []),
               ['history', '版本紀錄'],
             ] as [Tab, string][]
           ).map(([key, label]) => (
@@ -483,6 +499,7 @@ export function ReaderWorkspace() {
               try {
                 if (timer.current) clearTimeout(timer.current)
                 pending.current = null
+                await sandboxFlush.current?.()
                 await deleteDocument(doc.id)
                 working.close()
                 window.location.href = '/'
@@ -510,6 +527,7 @@ export function ReaderWorkspace() {
               <button
                 onClick={async () => {
                   try {
+                    await sandboxFlush.current?.()
                     await working.flush()
                     await load()
                   } catch (e) {
@@ -523,43 +541,51 @@ export function ReaderWorkspace() {
           )}
         </div>
       )}
-      {(dirty || body || quote || working.copies.length > 0 || working.error) && (
-        <WorkingCopyBar
-          status={working.status}
-          error={working.error}
-          restored={working.restored}
-          stale={working.baseRevisionId !== head.id}
-          copies={working.copies}
-          selectedId={working.id}
-          busy={busy}
-          onRetry={() => void working.flush().catch((e) => setError(errorMessage(e)))}
-          onSelect={(id) => {
-            void (async () => {
-              try {
-                await working.flush()
-                const restored = await working.open(doc, id)
-                setTab(restored.edited ? 'edit' : 'notes')
-              } catch (e) {
-                setError(errorMessage(e))
-              }
-            })()
-          }}
-          onDiscard={() => {
-            if (window.confirm('捨棄此草稿？已保存版本與其他草稿會保留。'))
+      {tab !== 'sandbox' &&
+        (dirty || body || quote || working.copies.length > 0 || working.error) && (
+          <WorkingCopyBar
+            status={working.status}
+            error={working.error}
+            restored={working.restored}
+            stale={working.baseRevisionId !== head.id}
+            copies={working.copies}
+            selectedId={working.id}
+            busy={busy}
+            onRetry={() => void working.flush().catch((e) => setError(errorMessage(e)))}
+            onSelect={(id) => {
               void (async () => {
-                setBusy(true)
                 try {
-                  await working.discard(doc)
+                  await working.flush()
+                  const restored = await working.open(doc, id)
+                  setTab(restored.edited ? 'edit' : 'notes')
                 } catch (e) {
                   setError(errorMessage(e))
-                } finally {
-                  setBusy(false)
                 }
               })()
-          }}
+            }}
+            onDiscard={() => {
+              if (window.confirm('捨棄此草稿？已保存版本與其他草稿會保留。'))
+                void (async () => {
+                  setBusy(true)
+                  try {
+                    await working.discard(doc)
+                  } catch (e) {
+                    setError(errorMessage(e))
+                  } finally {
+                    setBusy(false)
+                  }
+                })()
+            }}
+          />
+        )}
+      {tab === 'sandbox' ? (
+        <SandboxPanel
+          doc={doc}
+          onBusyChange={setBusy}
+          registerFlush={registerSandboxFlush}
+          onAdopt={(source, content) => commit('adopt', content, head.notes, null, false, source)}
         />
-      )}
-      {tab === 'history' ? (
+      ) : tab === 'history' ? (
         <RevisionHistory
           doc={doc}
           busy={busy}
@@ -782,7 +808,7 @@ const styles = {
     '[&_button]:border-b-transparent [&_button]:py-3.5 [&_button]:px-0',
     '[&_button]:bg-transparent [&_button]:text-[12px] [&_button]:text-muted',
     '[&_button.active]:border-ink [&_button.active]:text-ink',
-    'max-md:gap-5 max-md:w-full max-md:justify-between',
+    'max-md:gap-2 max-md:w-full max-md:justify-between max-md:flex-wrap',
     'max-md:[&_button]:text-[11px]',
   ].join(' '),
   readerTools: [

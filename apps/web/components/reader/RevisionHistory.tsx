@@ -1,12 +1,15 @@
 'use client'
 import { EDITABLE, latest, type LibraryDocument, type Revision } from '@/lib/documents'
 import { useRevisionDiff } from '@/hooks/useRevisionDiff'
+import { VersionDiff } from './VersionDiff'
 import { exportFile } from '@/lib/download'
 const kindLabels = {
   import: '匯入原始文件',
   edit: '修改文字',
   note: '更新筆記',
   restore: '還原版本',
+  fork: '建立沙盒',
+  adopt: '採納沙盒',
 }
 interface Props {
   doc: LibraryDocument
@@ -156,29 +159,7 @@ export function RevisionHistory({
             此格式的原始檔保持不變，可切換「筆記差異」比較紀錄。
           </p>
         )}
-        {compare?.pending ? (
-          <p role="status">正在比較版本…</p>
-        ) : compare?.tooLarge ? (
-          <p role="status">差異過大，請匯出版本紀錄後使用外部工具比較。</p>
-        ) : (
-          <div className={styles.diffOutput}>
-            {compare?.parts.length ? (
-              compare.parts.map((part, index) => (
-                <pre
-                  className={part.added ? 'diff-added' : part.removed ? 'diff-removed' : ''}
-                  key={index}
-                >
-                  <span aria-hidden="true">{part.added ? '+' : part.removed ? '−' : ' '}</span>
-                  {!part.added && !part.removed && part.value.split('\n').length > 12
-                    ? `${part.value.split('\n').slice(0, 3).join('\n')}\n\n… ${part.value.split('\n').length - 6} 行未變更 …\n\n${part.value.split('\n').slice(-3).join('\n')}`
-                    : part.value}
-                </pre>
-              ))
-            ) : (
-              <p>兩個版本沒有差異。</p>
-            )}
-          </div>
-        )}
+        <VersionDiff result={compare} />
       </section>
     </div>
   )
@@ -217,17 +198,5 @@ const styles = {
     '[&_>_span]:text-muted [&_>_span]:ml-auto [&_>_span]:text-[10px]',
     'max-md:gap-2.5',
     'max-md:[&_>_span]:text-[9px]',
-  ].join(' '),
-  diffOutput: [
-    'diff-output bg-surface border border-solid border-line rounded-[5px] overflow-auto',
-    'max-h-[65dvh]',
-    '[&_pre]:flex [&_pre]:whitespace-pre-wrap',
-    '[&_pre]:[word-break:break-word]',
-    '[&_pre]:py-2.5 [&_pre]:px-[15px] [&_pre]:m-0 [&_pre]:text-[12px] [&_pre]:leading-[1.8]',
-    '[&_pre]:font-code',
-    '[&_pre_>_span]:w-5.5 [&_pre_>_span]:shrink-0',
-    '[&_.diff-added]:bg-[#e5eddd] [&_.diff-added]:text-[#3a623b]',
-    '[&_.diff-removed]:bg-[#f3e2dc] [&_.diff-removed]:text-[#934c3e]',
-    '[&_>_p]:p-6 [&_>_p]:text-[12px] [&_>_p]:text-muted',
   ].join(' '),
 }

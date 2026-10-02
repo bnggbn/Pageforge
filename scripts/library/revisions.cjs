@@ -7,13 +7,13 @@ function fail(status, message) {
   error.status = status
   throw error
 }
-async function validateRevision(doc, revision, parent, config) {
+async function validateRevision(doc, revision, parent, config, context = {}) {
   if (
     !revision ||
     !uuid.test(revision.id) ||
     !Array.isArray(revision.notes) ||
     typeof revision.content !== 'string' ||
-    !['import', 'edit', 'note', 'restore'].includes(revision.kind)
+    !['import', 'edit', 'note', 'restore', 'fork', 'adopt'].includes(revision.kind)
   )
     fail(400, '版本資料格式錯誤。')
   if (
@@ -22,6 +22,18 @@ async function validateRevision(doc, revision, parent, config) {
     revision.prevSAI !== (parent?.sai ?? doc.genesis)
   )
     fail(409, '版本鏈與目前文件不一致。')
+  if (
+    revision.branchId !== context.branchId ||
+    (context.branchId
+      ? revision.kind !== (context.fork ? 'fork' : 'edit')
+      : revision.kind === 'fork')
+  )
+    fail(400, '版本不屬於此主線或沙盒。')
+  if (
+    context.fork &&
+    (revision.content !== parent.content || !marshal(revision.notes).equals(marshal(parent.notes)))
+  )
+    fail(400, '沙盒初始版本必須保留來源快照。')
   if (
     Buffer.byteLength(revision.content) > config.limits.textMiB * 1024 * 1024 ||
     Buffer.byteLength(JSON.stringify(revision.notes)) > config.limits.snapshotNotesMiB * 1024 * 1024
@@ -37,6 +49,27 @@ async function validateRevision(doc, revision, parent, config) {
   )
     fail(400, 'VAX 事件驗證失敗。')
   const data = env.sdto
+  if (
+    data.branchId !== revision.branchId ||
+    marshal(data.adoptedFrom ?? null).toString('utf8') !==
+      marshal(revision.adoptedFrom ?? null).toString('utf8') ||
+    (revision.kind === 'adopt' ? !revision.adoptedFrom : !!revision.adoptedFrom)
+  )
+    fail(400, '版本來源紀錄無效。')
+  if (revision.kind === 'adopt') {
+    const source = revision.adoptedFrom
+    if (
+      !['branchId', 'revisionId', 'baseRevisionId'].every((key) => uuid.test(source[key])) ||
+      (!context.adoption && !context.allowDetachedAdoption)
+    )
+      fail(400, '採納來源無效。')
+    if (
+      context.adoption &&
+      (revision.content !== context.adoption.content ||
+        marshal(revision.notes).toString('utf8') !== marshal(parent.notes).toString('utf8'))
+    )
+      fail(400, '採納必須使用已保存的沙盒文字並保留主線筆記。')
+  }
   const viewHash = hash(
     marshal({
       title: doc.title,

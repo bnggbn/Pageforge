@@ -5,6 +5,7 @@
 - 五種格式匯入、重複檢查、固定 library 資料夾保存與書架；保留 IndexedDB 靜態模式。
 - 固定 `/reader/?id=...` 靜態路由，閱讀、字級與位置恢復。
 - Markdown／TXT 編輯、引用筆記、VAX 版本驗證、文字／筆記 diff、還原成新版本。
+- 持久化工作草稿、並行草稿副本、整份 Markdown／TXT 沙盒 Fork／Diff／Adopt、封存復原與來源紀錄。
 - 原始檔／文字／版本紀錄匯出、確認刪除、多分頁衝突阻擋。
 - `pnpm test:web` 的正式建置與瀏覽器完整流程驗證。
 
@@ -17,10 +18,10 @@
 
 ## 後續工作
 
-以下沙盒與同步能力依 [Local-First 架構提案](LOCAL_FIRST_ARCHITECTURE.md) 細化，尚未實作：
+以下進階沙盒與同步能力依 [Local-First 架構提案](LOCAL_FIRST_ARCHITECTURE.md) 細化，尚未實作：
 
-- Hash／DAG 分支與章節／段落 Fork；Adopt 建立新主線版本，保留來源與歷史。
-- 草稿已持久化並支援切換／重啟恢復、多分頁保留與失敗重試；Temp Branch 與沙盒分支整合仍待完成。
+- 完整內容定址 DAG、沙盒再分支與章節／段落 Fork／Adopt；穩定區塊 ID 需先定義。
+- 沙盒草稿已持久化並分開恢復；短效分支到期清理、復原期限與自動垃圾回收仍待規格。
 - Side-by-Side 雙欄 Diff；現有文字／筆記 inline diff 保留。
 - 各端共用版本、差異與沙盒核心，並提供各平台的持久化介面。
 - 離線同步佇列；head 不一致時保留平行分支，讓使用者比較後採納或保留雙方。
