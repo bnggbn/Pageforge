@@ -271,13 +271,16 @@ const fs = require('node:fs')
         r.onsuccess = () => resolve(r.result)
       })
       await new Promise((resolve, reject) => {
-        const tx = database.transaction('documents', 'readwrite')
-        const store = tx.objectStore('documents')
-        const r = store.get(id)
+        const tx = database.transaction(['documents', 'revisions'], 'readwrite')
+        const r = tx.objectStore('documents').get(id)
         r.onsuccess = () => {
           const doc = r.result
-          doc.revisions[0].content += '篡改'
-          store.put(doc)
+          const store = tx.objectStore('revisions')
+          const node = store.get([id, doc.revisionIds[0]])
+          node.onsuccess = () => {
+            node.result.content += '篡改'
+            store.put(node.result)
+          }
         }
         tx.oncomplete = () => {
           database.close()

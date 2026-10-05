@@ -19,7 +19,7 @@
 
 - 把自己的文件放進 `library/collection/`，按「重新載入資料夾」；也可在畫面選擇匯入。
 - 原始檔保存到 `library/books/{id}/original.{ext}`。
-- 版本以獨立 JSON 保存在 `library/books/{id}/versions/`，manifest 保存順序與進度。
+- 版本以獨立 JSON 保存在 `library/books/{id}/versions/`，manifest 保存順序，閱讀進度獨立保存於 `progress.json`。
 - 沙盒在 `library/books/{id}/branches/{branch-id}/` 保存各自版本與 manifest；工作草稿在 `drafts/`，主線與沙盒分開恢復。
 - 原有瀏覽器書架可透過「轉入瀏覽器書架」複製到硬碟，原資料保留。同來源但不同版本鏈不會被覆蓋，會提示尚未合併。
 - 轉入同時複製沙盒與草稿，可重試；分支已分歧或來源文件 ID 不同時提示保留在瀏覽器，不強行覆蓋。

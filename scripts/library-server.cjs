@@ -36,6 +36,24 @@ function writeJSON(file, value) {
     throw error
   }
 }
+async function writeProgressJSON(file, value, beforeCommit) {
+  const temporary = `${file}.${randomUUID()}.tmp`
+  let handle
+  try {
+    handle = await fs.promises.open(temporary, 'wx')
+    await handle.writeFile(JSON.stringify(value))
+    await handle.sync()
+    await handle.close()
+    handle = null
+    // The head may have changed while asynchronous I/O was in flight.
+    beforeCommit()
+    fs.renameSync(temporary, file)
+  } catch (error) {
+    if (handle) await handle.close()
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary)
+    throw error
+  }
+}
 function readBody(request, config) {
   return new Promise((resolve, reject) => {
     const chunks = []
@@ -137,11 +155,25 @@ function createLibraryServer({
     if (!uuid.test(revisionId)) fail(400, '版本 ID 無效。')
     return readJSON(path.join(directory(id), 'versions', `${revisionId}.json`))
   }
+  const progressFile = (id) => path.join(directory(id), 'progress.json')
+  const readProgress = (item) => {
+    const file = progressFile(item.document.id)
+    if (!fs.existsSync(file)) return item.progress ?? null
+    if (fs.lstatSync(file).isSymbolicLink()) fail(400, '閱讀進度不可為外部連結。')
+    const { epoch, ...position } = readJSON(file)
+    return epoch === (item.progressEpoch ?? null) && item.revisionIds.includes(position.revisionId)
+      ? position
+      : null
+  }
+  const progressWrites = new Map()
   const list = () =>
     fs
       .readdirSync(books)
       .filter((id) => uuid.test(id) && fs.existsSync(path.join(books, id, 'manifest.json')))
-      .map((id) => metadata(record(id)))
+      .map((id) => {
+        const item = record(id)
+        return metadata({ ...item, progress: readProgress(item) })
+      })
   const serialize = (item) => ({
     ...item.document,
     revisions: item.revisionIds.map((id) => version(item.document.id, id)),
@@ -371,7 +403,7 @@ function createLibraryServer({
           const [, id, action] = match
           if (req.method === 'GET') {
             const item = record(id)
-            return send(res, action === 'progress' ? item.progress : serialize(item))
+            return send(res, action === 'progress' ? readProgress(item) : serialize(item))
           }
           if (req.method === 'DELETE' && !action) {
             record(id)
@@ -401,7 +433,10 @@ function createLibraryServer({
             writeJSON(path.join(directory(id), 'versions', `${revision.id}.json`), revision)
             fresh.document.updatedAt = revision.createdAt
             fresh.revisionIds.push(revision.id)
-            if (parent.content !== revision.content) fresh.progress = null
+            if (parent.content !== revision.content) {
+              fresh.progress = null
+              fresh.progressEpoch = revision.id
+            }
             writeJSON(path.join(directory(id), 'manifest.json'), fresh)
             return send(
               res,
@@ -412,9 +447,6 @@ function createLibraryServer({
           }
           if (req.method === 'PUT' && action === 'progress') {
             const position = await readBody(req, config)
-            const item = record(id)
-            if (item.revisionIds.at(-1) !== position.revisionId)
-              fail(409, '文件版本已更新，未保存舊進度。')
             if (
               !Number.isFinite(position.percentage) ||
               !Number.isFinite(position.ratio) ||
@@ -423,12 +455,38 @@ function createLibraryServer({
               typeof position.block !== 'string'
             )
               fail(400, '閱讀位置無效。')
-            item.progress = {
-              ...position,
+            const value = {
+              revisionId: position.revisionId,
+              section: position.section,
+              block: position.block,
+              updatedAt: new Date().toISOString(),
               percentage: Math.max(0, Math.min(100, position.percentage)),
               ratio: Math.max(0, Math.min(1, position.ratio)),
             }
-            writeJSON(path.join(directory(id), 'manifest.json'), item)
+            const operation = (progressWrites.get(id) ?? Promise.resolve())
+              .catch(() => {})
+              .then(async () => {
+                const item = record(id)
+                const check = () => {
+                  if (record(id).revisionIds.at(-1) !== position.revisionId)
+                    fail(409, '文件版本已更新，未保存舊進度。')
+                }
+                check()
+                const file = progressFile(id)
+                if (fs.existsSync(file) && fs.lstatSync(file).isSymbolicLink())
+                  fail(400, '閱讀進度不可為外部連結。')
+                await writeProgressJSON(
+                  file,
+                  { ...value, epoch: item.progressEpoch ?? null },
+                  check,
+                )
+              })
+            progressWrites.set(id, operation)
+            try {
+              await operation
+            } finally {
+              if (progressWrites.get(id) === operation) progressWrites.delete(id)
+            }
             return send(res, { saved: true })
           }
         }

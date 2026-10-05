@@ -6,6 +6,7 @@ const { chromium } = require('playwright')
 const { marshal, computeSAI, fromHex, toHex } = require('vax-sdk')
 const { createLibraryServer } = require('../../../scripts/library-server.cjs')
 const { loadConfig } = require('../../../scripts/config.cjs')
+const { readIndexed } = require('./indexed-fixtures.cjs')
 process.chdir(path.resolve(__dirname, '../../..'))
 
 const hash = (value) => createHash('sha256').update(value).digest('hex')
@@ -76,30 +77,7 @@ async function run(browser, mode) {
     })
     return { status: response.status, value: await response.json() }
   }
-  const read = async (page, store, id) =>
-    page.evaluate(
-      async ({ store, id }) => {
-        const db = await new Promise((resolve, reject) => {
-          const request = indexedDB.open('pageforge-library')
-          request.onsuccess = () => resolve(request.result)
-          request.onerror = () => reject(request.error)
-        })
-        return new Promise((resolve, reject) => {
-          const request = id
-            ? db.transaction(store).objectStore(store).get(id)
-            : db.transaction(store).objectStore(store).getAll()
-          request.onsuccess = () => {
-            db.close()
-            resolve(request.result)
-          }
-          request.onerror = () => {
-            db.close()
-            reject(request.error)
-          }
-        })
-      },
-      { store, id },
-    )
+  const read = readIndexed
   try {
     const page = await context.newPage()
     watch(page)

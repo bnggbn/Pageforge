@@ -1,6 +1,6 @@
 # 本機文件與版本模型
 
-目前實作位於 `apps/web/lib/`，固定資料夾服務在 `scripts/library-server.cjs`。預設使用硬碟書架，單獨靜態部署使用 IndexedDB `pageforge-library`（schema version 3，原子升級舊資料庫）作為另一種模式。
+目前實作位於 `apps/web/lib/`，固定資料夾服務在 `scripts/library-server.cjs`。預設使用硬碟書架，單獨靜態部署使用 IndexedDB `pageforge-library`（schema version 4，原子升級舊資料庫）作為另一種模式。
 
 整份文字文件的 Fork／Adopt 已實作；後續段落分支、雲端內容定址儲存與獨立會話鏈，見
 [Local-First 架構提案](LOCAL_FIRST_ARCHITECTURE.md)。提案中的節點欄位尚未取代以下實作；
@@ -8,7 +8,9 @@
 
 ## 固定資料夾儲存
 
-`library/books/{id}/original.{ext}` 保存原始位元組；`versions/{revision-id}.json` 保存不可覆寫的版本快照。`manifest.json` 是原子更新的版本順序、文件投影與進度紀錄。寫入使用暫存檔、fsync 與 rename；版本快照先寫入，成功切換 manifest 才對讀取者可見。失敗可能留下未引用的版本／暫存檔，但不會顯示保存成功或改動有效 head。
+`library/books/{id}/original.{ext}` 保存原始位元組；`versions/{revision-id}.json` 保存不可覆寫的版本快照。`manifest.json` 是原子更新的版本順序與文件投影紀錄。寫入使用暫存檔、fsync 與 rename；版本快照先寫入，成功切換 manifest 才對讀取者可見。失敗可能留下未引用的版本／暫存檔，但不會顯示保存成功或改動有效 head。
+
+閱讀進度獨立保存於 `progress.json`，非同步寫入小型暫存檔、fsync 後重新比對 head，再 rename。同文件進度寫入依序處理。文字變更時更新 manifest 的 `progressEpoch`，舊進度立即失效；只保存筆記則保留進度。尚無進度檔時相容讀取舊 manifest 的 progress，不會改寫原始檔或版本事件。
 
 儲存先驗證 VAX 事件，再次比對目前 head，拒絕並行覆寫。匯入先完成來源與版本目錄，再 rename 成有效文件資料夾。刪除整個資料夾移到 library/.trash/，不會再出現在有效書架。
 
@@ -18,14 +20,16 @@
 
 ## 瀏覽器模式儲存
 
-- `documents`：原始 Blob、文件格式與標題、EPUB 章節／XLSX 工作表投影、VAX genesis 與完整版本快照。
+- `documents`：文件格式與標題、VAX genesis、依序排列的版本 ID；不包含原始檔或快照內容。
+- `sources`：原始 Blob、EPUB 章節／XLSX 工作表投影，以文件 ID 識別。
+- `revisions`：獨立版本節點，以 `[documentId, id]` 識別；chain 索引區分主線與各沙盒。
 - `summaries`：不含內容的書架摘要與顯示進度；`[format, originalHash]` 為唯一索引，阻止並行重複匯入。
 - `progress`：文件 ID、版本 ID、穩定區塊標記、區塊內比例、百分比、章節／工作表或 PDF 頁碼。
 - `settings`：閱讀字級。
 - `drafts`：以 UUID 區分工作草稿，依 documentId 建立索引；版本 token 防止另一分頁覆寫。
-- `branches`：以 UUID 區分沙盒，依 documentId 建立索引；包含主線來源版本、名稱、沙盒版本鏈與選用封存時間。
+- `branches`：以 UUID 區分沙盒，依 documentId 建立索引；包含主線來源版本、名稱、依序排列的版本 ID 與選用封存時間。
 
-文件與摘要在同一 transaction 建立；刪除文件、摘要、進度、草稿與沙盒也在同一 transaction 完成。每次版本儲存先比對預期 head，再原子追加版本與更新摘要。另一分頁已修改／刪除時拒絕覆寫，編輯器保留未保存文字。v1／v2 升級只新增 store，不改寫原始檔或既有 canonical 事件。
+文件、來源、節點與摘要在同一 transaction 建立；刪除也在同一 transaction 完成。每次版本儲存先比對預期 head，再原子追加節點與更新 metadata／摘要。另一分頁已修改／刪除時拒絕覆寫，編輯器保留未保存文字。v1–v3 升級在同一 upgrade transaction 分離來源與節點；失敗回滾，可重試，不改動原始位元組或既有 canonical 事件。
 
 ## 原始檔與投影
 
@@ -86,6 +90,7 @@ PDF 不讀取內建閱讀器的捲動事件，使用手動保存的頁碼書籤�
 文字與未提交筆記分開於正式版本保存。每份草稿含 ID、文件 ID、基準版本 ID、選用沙盒 branchId、
 版本 token、文字、筆記內文／引用／位置與 UTC 更新時間。主線與沙盒依 branchId 分開恢復，
 切換沙盒先等待自己的草稿落盤。
+文字未變更時省略 `content`，由基準版本提供原文；恢復時使用已驗證的主線／沙盒快照。相容舊版含完整 content 的草稿，已編輯文字仍完整保存。草稿暫存只查 metadata 與來源 ID，不讀取原始 Blob 或整條版本鏈。
 固定資料夾儲存在 `library/books/{id}/drafts/{draft-id}.json`，使用暫存檔、fsync 與 rename。
 瀏覽器模式在檢查文件仍存在的同一 transaction 寫入 drafts。
 

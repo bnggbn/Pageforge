@@ -28,6 +28,7 @@ interface VerifiedContext {
 }
 const contexts = new WeakMap<Blob, VerifiedContext>()
 const verified = new WeakMap<Revision, VerifiedContext>()
+const frozen = new WeakSet<object>()
 const contextKeys = [
   'id',
   'actor',
@@ -42,9 +43,10 @@ const contextKeys = [
 ] as const
 
 function freezeTree(value: unknown): void {
-  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return
+  if (!value || typeof value !== 'object' || frozen.has(value)) return
   for (const child of Object.values(value)) freezeTree(child)
   Object.freeze(value)
+  frozen.add(value)
 }
 
 async function verifiedContext(doc: LibraryDocument): Promise<VerifiedContext> {
@@ -147,6 +149,10 @@ export async function createRevision(
   }
 }
 export async function verifyHistory(doc: LibraryDocument): Promise<void> {
+  Object.freeze(doc)
+  Object.freeze(doc.revisions)
+  freezeTree(doc.sections)
+  freezeTree(doc.sheets)
   if (doc.revisions.length === 0) throw new Error('版本來源驗證失敗，已停止編輯。')
   const context = await verifiedContext(doc)
   let expected = doc.genesis

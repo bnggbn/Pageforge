@@ -43,15 +43,14 @@ function createWorkingCopyStore({ directory, record, config, writeJSON, fail, br
       copy.documentId !== id ||
       !uuid.test(copy.version) ||
       !baseIds.includes(copy.baseRevisionId) ||
-      !['content', 'body', 'quote', 'location', 'updatedAt'].every(
-        (key) => typeof copy[key] === 'string',
-      ) ||
+      (copy.content !== undefined && typeof copy.content !== 'string') ||
+      !['body', 'quote', 'location', 'updatedAt'].every((key) => typeof copy[key] === 'string') ||
       !Number.isFinite(Date.parse(copy.updatedAt)) ||
-      (!['markdown', 'text'].includes(doc.document.format) && copy.content !== '')
+      (!['markdown', 'text'].includes(doc.document.format) && copy.content && copy.content !== '')
     )
       fail(400, '草稿內容或來源無效。')
     if (
-      Buffer.byteLength(copy.content) > config.limits.textMiB * 1024 * 1024 ||
+      Buffer.byteLength(copy.content ?? '') > config.limits.textMiB * 1024 * 1024 ||
       copy.body.length > config.limits.noteCharacters ||
       copy.quote.length > config.limits.quoteCharacters ||
       copy.location.length > config.limits.locationCharacters
@@ -63,7 +62,13 @@ function createWorkingCopyStore({ directory, record, config, writeJSON, fail, br
       (current && current.branchId !== copy.branchId)
     )
       fail(409, '此草稿已由另一個分頁更新。')
-    if (!current && list(id).length >= config.limits.workingCopyCount)
+    const targetFolder = folder(id)
+    const count = !fs.existsSync(targetFolder)
+      ? 0
+      : fs
+          .readdirSync(targetFolder)
+          .filter((name) => name.endsWith('.json') && uuid.test(name.slice(0, -5))).length
+    if (!current && count >= config.limits.workingCopyCount)
       fail(413, '此文件的草稿數量已達上限，請先整理保留的草稿。')
     fs.mkdirSync(folder(id), { recursive: true })
     const saved = {}
@@ -78,7 +83,7 @@ function createWorkingCopyStore({ directory, record, config, writeJSON, fail, br
       'location',
       'updatedAt',
     ])
-      saved[key] = copy[key]
+      if (copy[key] !== undefined) saved[key] = copy[key]
     if (branchData) saved.branchId = branchData.id
     writeJSON(target, saved)
   }

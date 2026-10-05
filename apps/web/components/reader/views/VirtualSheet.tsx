@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { config } from '@/lib/config'
 import type { VirtualReading } from '@/hooks/useReaderProgress'
 
@@ -21,7 +21,7 @@ export const VirtualSheet = memo(function VirtualSheet({
   const [range, setRange] = useState({ start: 0, end: 1 })
   const columns = useMemo(() => Math.max(1, ...rows.map((row) => row.length)), [rows])
 
-  useLayoutEffect(() => {
+  useEffect(() => {
     const container = scrollRef.current
     const body = bodyRef.current
     if (!container || !body) return

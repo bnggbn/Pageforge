@@ -1,6 +1,6 @@
 import * as browser from './indexed-storage'
 import * as branches from './indexed-sandboxes'
-import { latest, type LibraryDocument, type WorkingCopy } from './documents'
+import { latest, type LibraryDocument, type WorkingCopyRecord } from './documents'
 import { verifySandbox } from './sandboxes'
 import {
   listSandboxes,
@@ -12,9 +12,9 @@ import {
   saveWorkingCopy,
 } from './storage'
 
-const sameDraft = (a: WorkingCopy, b: WorkingCopy) =>
+const sameDraft = (a: WorkingCopyRecord, b: WorkingCopyRecord) =>
   ['branchId', 'baseRevisionId', 'content', 'body', 'quote', 'location'].every(
-    (key) => a[key as keyof WorkingCopy] === b[key as keyof WorkingCopy],
+    (key) => a[key as keyof WorkingCopyRecord] === b[key as keyof WorkingCopyRecord],
   )
 
 /** Retryable copy: preserve the browser source and never overwrite a divergent disk branch. */

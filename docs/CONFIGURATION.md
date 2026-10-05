@@ -23,6 +23,9 @@
 `limits.sandboxCount` 控制每份文件可保留的沙盒數量（含封存），預設 30。
 `limits.sandboxNameCharacters` 控制沙盒名稱長度，預設 80；沙盒文字與版本數沿用既有快照限制。
 `reading.draftDebounceMs` 控制輸入後自動暫存間隔，預設 500 ms；切換前會立即等待暫存。
+`reading.sheetRowHeightPx` 控制虛擬表格的最低列高，預設 40 px；大字級會提高列高。
+`reading.sheetOverscanRows` 控制可見範圍外預先渲染的列數，預設 6。
+`limits.sheetCells` 同時包含稀疏工作表補出的空儲存格，避免少量來源值展開成巨大投影。
 修改後重啟服務，重新整理網頁即可。服務會將閱讀與容量設定提供給前端，
 不必為本機覆寫重新建置；純靜態瀏覽器模式使用建置時的共用預設值。
 已有的字級若不在新選項中，會使用新的預設值，文件與 VAX 歷史不受影響。

@@ -8,6 +8,11 @@ export class WorkingCopyConflict extends Error {
   }
 }
 
+/** Missing content references the immutable base snapshot; legacy full drafts still load. */
+export type WorkingCopyRecord = Omit<import('@pageforge/domain').WorkingCopy, 'content'> & {
+  content?: string
+}
+
 export interface LibraryDocument {
   id: string
   title: string

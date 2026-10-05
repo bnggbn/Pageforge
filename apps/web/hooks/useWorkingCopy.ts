@@ -20,11 +20,26 @@ interface Session {
   id: string
   version: string | null
   values: Values
-  saved: string
+  saved: Values | null
+  measuredContent?: string
+  contentBytes?: number
   branchId?: string
 }
 const emptyNote = { body: '', quote: '', location: '全文筆記' }
-const signature = (values: Values) => JSON.stringify(values)
+
+function recoverCopies(
+  doc: LibraryDocument,
+  copies: import('@/lib/documents').WorkingCopyRecord[],
+) {
+  const bases = new Map(doc.revisions.map((revision) => [revision.id, revision.content]))
+  return copies
+    .filter((copy) => copy.branchId === doc.branchId)
+    .map((copy): WorkingCopy => {
+      const content = copy.content ?? bases.get(copy.baseRevisionId)
+      if (content === undefined) throw new Error('草稿來源版本不存在，已停止載入。')
+      return { ...copy, content }
+    })
+}
 
 export function useWorkingCopy() {
   const active = useRef<Session | null>(null)
@@ -46,16 +61,19 @@ export function useWorkingCopy() {
     const session = active.current
     if (!session) return
     const values = session.values
-    const mark = signature(values)
     const operation = queue.current
       .catch(() => {})
       .then(async () => {
-        if (session.saved === mark) return
+        if (session.saved === values) return
         if (mounted.current && active.current === session)
           setView((previous) => ({ ...previous, status: 'saving', error: '' }))
         try {
+          if (session.measuredContent !== values.content) {
+            session.contentBytes = new TextEncoder().encode(values.content).length
+            session.measuredContent = values.content
+          }
           if (
-            new TextEncoder().encode(values.content).length > config.limits.textMiB * 1024 * 1024 ||
+            session.contentBytes! > config.limits.textMiB * 1024 * 1024 ||
             values.body.length > config.limits.noteCharacters ||
             values.quote.length > config.limits.quoteCharacters ||
             values.location.length > config.limits.locationCharacters
@@ -81,18 +99,20 @@ export function useWorkingCopy() {
               updatedAt: new Date().toISOString(),
               ...(session.branchId ? { branchId: session.branchId } : {}),
             }
+            const { content, ...reference } = copy
+            const stored = content === session.baseline ? reference : copy
             try {
-              await saveWorkingCopy(copy, session.version)
+              await saveWorkingCopy(stored, session.version)
             } catch (error) {
               if (!(error instanceof WorkingCopyConflict)) throw error
               // Preserve both writers; a stale draft token never overwrites another tab.
               session.id = crypto.randomUUID()
               copy.id = session.id
-              await saveWorkingCopy(copy, null)
+              await saveWorkingCopy({ ...stored, id: session.id }, null)
             }
             session.version = copy.version
           }
-          session.saved = mark
+          session.saved = values
           if (mounted.current && active.current === session) {
             setView((previous) => ({
               ...previous,
@@ -117,9 +137,9 @@ export function useWorkingCopy() {
 
   const open = useCallback(async (doc: LibraryDocument, selectedId?: string) => {
     await queue.current.catch(() => {})
-    const copies = (await listWorkingCopies(doc.id))
-      .filter((copy) => copy.branchId === doc.branchId)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    const copies = recoverCopies(doc, await listWorkingCopies(doc.id)).sort((a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt),
+    )
     const preferred =
       selectedId ??
       (active.current?.documentId === doc.id && active.current.branchId === doc.branchId
@@ -147,7 +167,7 @@ export function useWorkingCopy() {
       id: copy?.id ?? crypto.randomUUID(),
       version: copy?.version ?? null,
       values,
-      saved: signature(values),
+      saved: values,
       branchId: doc.branchId,
     }
     setView({
@@ -170,6 +190,10 @@ export function useWorkingCopy() {
     (patch: Partial<Values>) => {
       const session = active.current
       if (!session) return
+      if (
+        Object.entries(patch).every(([key, value]) => session.values[key as keyof Values] === value)
+      )
+        return
       session.values = { ...session.values, ...patch }
       setView((previous) => ({ ...previous, ...patch, status: 'pending', error: '' }))
       if (timer.current) clearTimeout(timer.current)
@@ -198,7 +222,7 @@ export function useWorkingCopy() {
         ...(clearContent ? { content: latest(doc).content } : {}),
         ...(clearNote ? emptyNote : {}),
       }
-      session.saved = ''
+      session.saved = null
       setView((previous) => ({
         ...previous,
         ...session.values,
@@ -219,9 +243,7 @@ export function useWorkingCopy() {
     active.current = null
     // Start fresh, leaving other tabs' copies available in the selector.
     const values = { content: latest(doc).content, ...emptyNote }
-    const copies = (await listWorkingCopies(doc.id)).filter(
-      (copy) => copy.branchId === doc.branchId,
-    )
+    const copies = recoverCopies(doc, await listWorkingCopies(doc.id))
     active.current = {
       documentId: doc.id,
       baseRevisionId: latest(doc).id,
@@ -229,7 +251,7 @@ export function useWorkingCopy() {
       id: crypto.randomUUID(),
       version: null,
       values,
-      saved: signature(values),
+      saved: values,
       branchId: doc.branchId,
     }
     setView({
@@ -252,7 +274,7 @@ export function useWorkingCopy() {
     mounted.current = true
     const prevent = (event: BeforeUnloadEvent) => {
       const session = active.current
-      if (session && session.saved !== signature(session.values)) event.preventDefault()
+      if (session && session.saved !== session.values) event.preventDefault()
     }
     const visibility = () => {
       if (document.visibilityState === 'hidden') void flush().catch(() => {})

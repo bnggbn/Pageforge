@@ -79,9 +79,7 @@ require('./fixtures.cjs')
     await page.getByRole('button', { name: '閱讀', exact: true }).click()
     await page.locator('.reader-scroll').evaluate((el) => (el.scrollTop = el.scrollHeight * 0.4))
     await page.waitForTimeout(800)
-    assert.ok(
-      JSON.parse(fs.readFileSync(path.join(book, 'manifest.json'), 'utf8')).progress.percentage > 0,
-    )
+    assert.ok(JSON.parse(fs.readFileSync(path.join(book, 'progress.json'), 'utf8')).percentage > 0)
     await context.close()
     // A new browser has no IndexedDB from the first context; the shelf and versions must still load.
     const fresh = await browser.newContext({ viewport: { width: 1440, height: 1000 } }),
@@ -209,8 +207,18 @@ require('./fixtures.cjs')
           r.onerror = () => reject(r.error)
         })
         await new Promise((resolve, reject) => {
-          const tx = database.transaction(['documents', 'summaries'], 'readwrite')
-          tx.objectStore('documents').put(legacy)
+          const tx = database.transaction(
+            ['documents', 'sources', 'revisions', 'summaries'],
+            'readwrite',
+          )
+          const { original, sections, sheets, revisions, ...metadata } = legacy
+          tx.objectStore('documents').put({
+            ...metadata,
+            revisionIds: revisions.map((node) => node.id),
+          })
+          tx.objectStore('sources').put({ id: legacy.id, original, sections, sheets })
+          for (const node of revisions)
+            tx.objectStore('revisions').put({ ...node, documentId: legacy.id, chainId: legacy.id })
           tx.objectStore('summaries').put({
             id: legacy.id,
             title: legacy.title,

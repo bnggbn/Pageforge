@@ -7,7 +7,7 @@ import type {
   LibraryDocument,
   ReadingPosition,
   Revision,
-  WorkingCopy,
+  WorkingCopyRecord,
   SandboxBranch,
   SandboxSummary,
 } from './documents'
@@ -110,7 +110,7 @@ export async function appendRevision(
   revision: Revision,
 ): Promise<LibraryDocument> {
   if ((await storageInfo()).mode !== 'disk')
-    return browser.appendRevision(document.id, expectedHead, revision)
+    return browser.appendRevision(document, expectedHead, revision)
   const saved = await api<{ revision: Revision; updatedAt: string }>(
     `/documents/${encodeURIComponent(document.id)}/revisions`,
     'POST',
@@ -148,12 +148,12 @@ export async function saveFontSize(size: number): Promise<void> {
   if ((await storageInfo()).mode !== 'disk') return browser.saveFontSize(size)
   await api('/settings', 'PUT', { fontSize: size })
 }
-export async function listWorkingCopies(id: string): Promise<WorkingCopy[]> {
+export async function listWorkingCopies(id: string): Promise<WorkingCopyRecord[]> {
   return (await storageInfo()).mode === 'disk'
     ? api(`/documents/${encodeURIComponent(id)}/drafts`)
     : browser.listWorkingCopies(id)
 }
-export async function saveWorkingCopy(copy: WorkingCopy, expectedVersion: string | null) {
+export async function saveWorkingCopy(copy: WorkingCopyRecord, expectedVersion: string | null) {
   if ((await storageInfo()).mode !== 'disk') return browser.saveWorkingCopy(copy, expectedVersion)
   await api(`/documents/${encodeURIComponent(copy.documentId)}/drafts/${copy.id}`, 'PUT', {
     copy,
@@ -196,7 +196,7 @@ export async function appendSandbox(
   revision: Revision,
 ): Promise<SandboxBranch> {
   if ((await storageInfo()).mode !== 'disk')
-    return sandboxes.appendSandbox(branch.documentId, branch.id, expectedHead, revision)
+    return sandboxes.appendSandbox(branch, expectedHead, revision)
   const saved = await api<{ revision: Revision; updatedAt: string }>(
     `/documents/${branch.documentId}/branches/${branch.id}/revisions`,
     'POST',

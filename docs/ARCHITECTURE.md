@@ -35,11 +35,16 @@ Web 畫面透過 `lib/storage.ts` 使用儲存介面：本機服務模式連接 
 - `useWorkingCopy` 管理防抖暫存、版本 token 與恢復；主線和沙盒分別持有 session，切換前等待落盤。
 - `lib/sandboxes.ts` 建立與驗證分支投影；`indexed-sandboxes.ts`、`scripts/library/sandboxes.cjs` 實作各自的原子分支保存；`browser-migration.ts` 複製沙盒與草稿，保留分歧來源。
 - `DocumentContent` 負責文字排版，使用 React memo；筆記輸入與進度更新不重新解析 Markdown。
+- `VirtualSheet` 只建立可見列與 overscan 列，使用固定列高、單行儲存格與完整值 tooltip；memo 隔離筆記輸入。虛擬定位介面按原始列號保存與恢復畫面外的位置。
 - `reading-anchor.ts` 負責段落定位；保留段落節點清單，捲動定位採二分查找，降低 DOM 量測次數。
 - `useRevisionDiff` 管理背景工作與結果生命週期；diff 在 Web Worker 執行，切換比較或離開時取消舊工作，避免舊結果覆蓋新選擇。
 - 保存新版的前端請求使用增量回應，只接收已保存版本；保留已載入的原始檔，不重傳二進位與全部歷史。重新開啟仍完整載入並驗證歷史。
 - 沙盒追加同樣只回傳新節點；固定資料夾草稿檢查只讀沙盒 manifest 的來源 ID，不在每次暫存讀取全部版本快照。
 - `history.ts` 負責前端 VAX 建立與驗證；`scripts/library/revisions.cjs` 負責服務端保存前的驗證。
+- 前端驗證以原始 Blob 與凍結的 metadata／節點物件識別重用，仍逐節點檢查順序、scope 與重複 ID。重新載入產生新物件，會完整驗證；不以相同 ID 或 SAI 就信任可變資料。
+- IndexedDB v4 將原始檔／投影與獨立版本節點分離；存版只追加新節點並更新小型 metadata，草稿暫存不開啟來源／版本 store。v1–v3 升級原子移轉，失敗保留舊資料。
+- 未改文字的筆記草稿只保存基準版本引用；字串容量只在文字變更後重新量測，保存狀態用物件身分追蹤，不反覆 JSON 序列化全文。
+- 磁碟進度存入獨立 `progress.json`，非同步寫入與 fsync；提交前重新檢查 head，文字變更用 epoch 使舊進度失效，相容舊 manifest 的進度。
 - `scripts/library-server.cjs` 協調 HTTP 路由、資料夾保存與開發代理；圖片處理由 `scripts/library/images.cjs` 負責。
 
 原始檔、版本、筆記與進度的現有保存方式與 VAX 協定保持相容。
@@ -76,11 +81,12 @@ SVG 與不符合點陣圖片檔頭的內容，並套用 `limits.imageMiB` 容量
 
 ## 後續效能工作
 
-這次改善了可直接驗證的重複解析、捲動定位與同步 diff。
-尚待量測的部分包括大型 Excel 的 DOM 數量、全歷史快照下載、
-以及本機服務的同步磁碟操作。
-適合依實際大檔測試，再加入虛擬表格、分頁載入版本、增量保存回應與非同步儲存層。
-未提供端到端速度提升百分比；段落定位測試以 10,000 個節點驗證每次至多 15 次量測。
+`tests/performance-workflow.cjs` 以隔離合成文件檢查表格 DOM 上限、畫面外列定位、
+增量驗證的雜湊資料量、筆記／進度的小型保存，以及有內容的 v3 資料庫升級與失敗回滾。
+量測結果保存在忽略的 `.preview/performance-tests/`；時間受機器與負載影響，不以毫秒門檻判定 CI。
+重新開啟仍下載完整主線歷史並驗證；後續可評估分頁載入。
+正式版本與草稿的磁碟提交仍使用同步原子寫入，進度已獨立非同步保存。
+段落定位測試以 10,000 個節點驗證每次至多 15 次量測。
 
 ## 格式化
 
