@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { config } from '@/lib/config'
 import type { VirtualReading } from '@/hooks/useReaderProgress'
+import { SheetCellDialog, type SheetCell } from './SheetCellDialog'
 
 interface Props {
   rows: string[][]
@@ -19,6 +20,7 @@ export const VirtualSheet = memo(function VirtualSheet({
   const bodyRef = useRef<HTMLTableSectionElement>(null)
   const rowHeight = Math.max(config.reading.sheetRowHeightPx, Math.ceil(fontSize * 2))
   const [range, setRange] = useState({ start: 0, end: 1 })
+  const [expanded, setExpanded] = useState<SheetCell | null>(null)
   const columns = useMemo(() => Math.max(1, ...rows.map((row) => row.length)), [rows])
 
   useEffect(() => {
@@ -88,10 +90,22 @@ export const VirtualSheet = memo(function VirtualSheet({
                   {index + 1}
                 </th>
                 {row.map((cell, column) => (
-                  <td key={column} style={{ height: rowHeight, paddingBlock: 0 }}>
-                    <span title={cell} className="block max-w-80 truncate whitespace-nowrap">
-                      {cell}
-                    </span>
+                  <td
+                    key={column}
+                    aria-label={cell || undefined}
+                    style={{ height: rowHeight, paddingBlock: 0 }}
+                  >
+                    {cell && (
+                      <button
+                        type="button"
+                        title={cell}
+                        aria-label={`查看第 ${index + 1} 列第 ${column + 1} 欄完整內容`}
+                        onClick={() => setExpanded({ value: cell, row: index, column })}
+                        className="block max-w-80 truncate whitespace-nowrap text-left underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-rust"
+                      >
+                        {cell}
+                      </button>
+                    )}
                   </td>
                 ))}
               </tr>
@@ -100,6 +114,7 @@ export const VirtualSheet = memo(function VirtualSheet({
           {spacer((rows.length - range.end) * rowHeight, 'after')}
         </tbody>
       </table>
+      {expanded && <SheetCellDialog cell={expanded} onClose={() => setExpanded(null)} />}
     </div>
   )
 })

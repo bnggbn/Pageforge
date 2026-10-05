@@ -24,9 +24,10 @@ function spreadsheet(rows) {
       '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Target="worksheets/sheet1.xml"/></Relationships>',
     'xl/worksheets/sheet1.xml':
       '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
-      Array.from(
-        { length: rows },
-        (_, i) => `<row r="${i + 1}"><c r="CV${i + 1}"><v>${i + 1}</v></c></row>`,
+      Array.from({ length: rows }, (_, i) =>
+        i === 0
+          ? `<row r="1"><c r="CV1" t="inlineStr"><is><t>多行完整內容\n${'文字'.repeat(150)}\n尾段</t></is></c></row>`
+          : `<row r="${i + 1}"><c r="CV${i + 1}"><v>${i + 1}</v></c></row>`,
       ).join('') +
       '</sheetData></worksheet>',
   }
@@ -123,6 +124,35 @@ async function main() {
       const initialMs = performance.now() - began
       const cells = await page.locator('table td').count()
       assert.ok(cells > 100 && cells < 5000, `Visible cell count must stay bounded: ${cells}`)
+      for (const width of [1440, 390]) {
+        await page.setViewportSize({ width, height: 1000 })
+        const button = page.getByRole('button', {
+          name: '查看第 1 列第 100 欄完整內容',
+          exact: true,
+        })
+        const value = await button.textContent()
+        await button.click()
+        await page.getByRole('dialog').waitFor()
+        assert.equal(await page.getByRole('dialog').locator('p').innerText(), value)
+        await page
+          .getByRole('dialog')
+          .locator('p')
+          .evaluate((element) => {
+            const range = document.createRange()
+            range.selectNodeContents(element)
+            const selection = window.getSelection()
+            selection.removeAllRanges()
+            selection.addRange(range)
+            element.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }))
+          })
+        await page.getByLabel('移除引用').waitFor({ state: 'attached' })
+        assert.ok((await page.locator('.note-quote').textContent()).includes(value))
+        assert.match(await page.getByLabel('筆記位置').inputValue(), /row-0$/)
+        await page.evaluate(() => window.getSelection().removeAllRanges())
+        await page.keyboard.press('Escape')
+        await page.getByRole('dialog').waitFor({ state: 'hidden' })
+      }
+      await page.setViewportSize({ width: 1440, height: 1000 })
       await page.evaluate(() => {
         window.__perf.tasks = []
         window.__perf.inputFrames = []
@@ -246,7 +276,7 @@ async function main() {
     await checkHistoryCache(latestDocument)
     await checkUpgrade(browser, url, latestDocument, branch)
     console.log(
-      'PASS performance: bounded spreadsheet DOM, offscreen progress restoration, incremental VAX hashing, small note drafts, small progress writes',
+      'PASS performance: bounded spreadsheet DOM, full cell dialog on desktop/mobile, offscreen progress restoration, incremental VAX hashing, small note drafts, small progress writes',
     )
   } finally {
     if (browser) await browser.close()

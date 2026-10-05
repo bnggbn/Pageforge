@@ -35,7 +35,7 @@ Web 畫面透過 `lib/storage.ts` 使用儲存介面：本機服務模式連接 
 - `useWorkingCopy` 管理防抖暫存、版本 token 與恢復；主線和沙盒分別持有 session，切換前等待落盤。
 - `lib/sandboxes.ts` 建立與驗證分支投影；`indexed-sandboxes.ts`、`scripts/library/sandboxes.cjs` 實作各自的原子分支保存；`browser-migration.ts` 複製沙盒與草稿，保留分歧來源。
 - `DocumentContent` 負責文字排版，使用 React memo；筆記輸入與進度更新不重新解析 Markdown。
-- `VirtualSheet` 只建立可見列與 overscan 列，使用固定列高、單行儲存格與完整值 tooltip；memo 隔離筆記輸入。虛擬定位介面按原始列號保存與恢復畫面外的位置。
+- `VirtualSheet` 只建立可見列與 overscan 列，使用固定列高、單行儲存格；可點開完整內容視窗，支援手機、多行閱讀與文字選取。memo 隔離筆記輸入，虛擬定位介面按原始列號保存與恢復畫面外的位置。
 - `reading-anchor.ts` 負責段落定位；保留段落節點清單，捲動定位採二分查找，降低 DOM 量測次數。
 - `useRevisionDiff` 管理背景工作與結果生命週期；diff 在 Web Worker 執行，切換比較或離開時取消舊工作，避免舊結果覆蓋新選擇。
 - 保存新版的前端請求使用增量回應，只接收已保存版本；保留已載入的原始檔，不重傳二進位與全部歷史。重新開啟仍完整載入並驗證歷史。
