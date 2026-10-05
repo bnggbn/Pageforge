@@ -1,6 +1,7 @@
 import type { ScrollDocumentViewProps } from './types'
 import { SectionSelector } from './SectionSelector'
 import { ScrollReaderFrame } from './ScrollReaderFrame'
+import { VirtualSheet } from './VirtualSheet'
 
 export function SpreadsheetView({ doc, progress, onSelectQuote }: ScrollDocumentViewProps) {
   const section = Math.min(Math.max(0, progress.section), Math.max(0, doc.sheets.length - 1))
@@ -17,20 +18,13 @@ export function SpreadsheetView({ doc, progress, onSelectQuote }: ScrollDocument
         <p className="small-note text-[11px] text-muted leading-[1.8] my-2.5 mx-0">
           顯示儲存格原始值與公式的快取結果；不重算公式，也不保留 Excel 樣式。
         </p>
-        <div className="reader-table-wrap overflow-auto max-w-full my-5 mx-0">
-          <table>
-            <tbody>
-              {doc.sheets[section]?.rows.map((row, index) => (
-                <tr data-block={`row-${index}`} key={index}>
-                  <th scope="row">{index + 1}</th>
-                  {row.map((cell, column) => (
-                    <td key={column}>{cell}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <VirtualSheet
+          key={section}
+          rows={doc.sheets[section]?.rows ?? []}
+          fontSize={progress.fontSize}
+          scrollRef={progress.scrollRef}
+          virtualRef={progress.virtualRef}
+        />
       </ScrollReaderFrame>
     </>
   )

@@ -5,7 +5,13 @@ export interface ScrollDocumentViewProps {
   doc: LibraryDocument
   progress: Pick<
     ReaderProgress,
-    'scrollRef' | 'articleRef' | 'fontSize' | 'onScroll' | 'section' | 'changeSection'
+    | 'scrollRef'
+    | 'articleRef'
+    | 'virtualRef'
+    | 'fontSize'
+    | 'onScroll'
+    | 'section'
+    | 'changeSection'
   >
   onSelectQuote: () => void
 }

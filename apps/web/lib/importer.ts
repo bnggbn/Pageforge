@@ -149,10 +149,12 @@ export function parseXlsx(files: Record<string, Uint8Array>): Sheet[] {
         const column = letters
           ? [...letters].reduce((n, char) => n * 26 + char.charCodeAt(0) - 64, 0) - 1
           : values.length
-        if (column >= config.limits.sheetColumns || ++cells > config.limits.sheetCells)
+        const added = Math.max(0, column + 1 - values.length)
+        if (column >= config.limits.sheetColumns || cells + added > config.limits.sheetCells)
           throw new Error(
             `試算表最多支援 ${config.limits.sheetColumns} 欄／${config.limits.sheetCells} 個儲存格。`,
           )
+        cells += added
         while (values.length < column) values.push('')
         const type = cell.getAttribute('t')
         const raw = tags(cell, 'v')[0]?.textContent ?? ''

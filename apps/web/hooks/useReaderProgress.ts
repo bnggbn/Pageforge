@@ -15,6 +15,11 @@ interface Props {
   onMessage: (message: string) => void
 }
 
+export interface VirtualReading {
+  capture: (container: HTMLElement) => Pick<ReadingPosition, 'block' | 'ratio'>
+  restore: (position: ReadingPosition, container: HTMLElement) => boolean
+}
+
 export function useReaderProgress({ doc, settings, tab, onError, onMessage }: Props) {
   const { position } = settings
   const compatible =
@@ -26,6 +31,7 @@ export function useReaderProgress({ doc, settings, tab, onError, onMessage }: Pr
   const [percentage, setPercentage] = useState(compatible ? position.percentage : 0)
   const scrollRef = useRef<HTMLDivElement>(null)
   const articleRef = useRef<HTMLElement>(null)
+  const virtualRef = useRef<VirtualReading | null>(null)
   const blocks = useRef<HTMLElement[]>([])
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pending = useRef<ReadingPosition | null>(null)
@@ -42,7 +48,7 @@ export function useReaderProgress({ doc, settings, tab, onError, onMessage }: Pr
     if (!container) return null
     const current = active.current
     const top = container.getBoundingClientRect().top
-    const anchor = readingAnchor(blocks.current, top + 36)
+    const anchor = virtualRef.current ? null : readingAnchor(blocks.current, top + 36)
     const rect = anchor?.getBoundingClientRect()
     const distance = container.scrollHeight - container.clientHeight
     const ratio = distance <= 0 ? 1 : Math.max(0, Math.min(1, container.scrollTop / distance))
@@ -54,8 +60,12 @@ export function useReaderProgress({ doc, settings, tab, onError, onMessage }: Pr
           : 1
     return {
       revisionId: latest(current).id,
-      block: anchor?.dataset.block ?? '',
-      ratio: rect ? Math.max(0, Math.min(1, (top + 36 - rect.top) / Math.max(rect.height, 1))) : 0,
+      ...(virtualRef.current?.capture(container) ?? {
+        block: anchor?.dataset.block ?? '',
+        ratio: rect
+          ? Math.max(0, Math.min(1, (top + 36 - rect.top) / Math.max(rect.height, 1)))
+          : 0,
+      }),
       percentage: Math.round(((section + ratio) / Math.max(1, count)) * 100),
       updatedAt: new Date().toISOString(),
       section,
@@ -95,6 +105,10 @@ export function useReaderProgress({ doc, settings, tab, onError, onMessage }: Pr
     const position = restore.current,
       container = scrollRef.current
     const anchor = blocks.current.find((node) => node.dataset.block === position.block)
+    if (virtualRef.current?.restore(position, container)) {
+      restore.current = null
+      return
+    }
     if (anchor)
       container.scrollTop =
         anchor.getBoundingClientRect().top -
@@ -191,6 +205,7 @@ export function useReaderProgress({ doc, settings, tab, onError, onMessage }: Pr
     percentage,
     scrollRef,
     articleRef,
+    virtualRef,
     onScroll,
     flush,
     cancelPending,

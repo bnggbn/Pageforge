@@ -13,6 +13,70 @@ import type { LibraryDocument, Revision, Note, AdoptionSource } from './document
 const globals = globalThis as unknown as { Buffer?: typeof Buffer }
 globals.Buffer ??= Buffer
 
+interface VerifiedContext {
+  id: string
+  actor: string
+  salt: string
+  genesis: string
+  originalHash: string
+  title: string
+  filename: string
+  format: LibraryDocument['format']
+  sections: LibraryDocument['sections']
+  sheets: LibraryDocument['sheets']
+  viewHash: string
+}
+const contexts = new WeakMap<Blob, VerifiedContext>()
+const verified = new WeakMap<Revision, VerifiedContext>()
+const contextKeys = [
+  'id',
+  'actor',
+  'salt',
+  'genesis',
+  'originalHash',
+  'title',
+  'filename',
+  'format',
+  'sections',
+  'sheets',
+] as const
+
+function freezeTree(value: unknown): void {
+  if (!value || typeof value !== 'object' || Object.isFrozen(value)) return
+  for (const child of Object.values(value)) freezeTree(child)
+  Object.freeze(value)
+}
+
+async function verifiedContext(doc: LibraryDocument): Promise<VerifiedContext> {
+  const cached = contexts.get(doc.original)
+  if (cached && contextKeys.every((key) => cached[key] === doc[key])) return cached
+  const expected = toHex(await computeGenesisSAI(doc.actor, fromHex(doc.salt)))
+  if (expected !== doc.genesis) throw new Error('版本來源驗證失敗，已停止編輯。')
+  if ((await digest(await doc.original.arrayBuffer())) !== doc.originalHash)
+    throw new Error('原始檔完整性驗證失敗。')
+  // Only immutable, verified objects qualify for reuse. Reloaded IDB/API objects are rechecked.
+  freezeTree(doc.sections)
+  freezeTree(doc.sheets)
+  const context = Object.fromEntries(contextKeys.map((key) => [key, doc[key]])) as Omit<
+    VerifiedContext,
+    'viewHash'
+  >
+  const value = {
+    ...context,
+    viewHash: await digest(
+      marshal({
+        title: doc.title,
+        filename: doc.filename,
+        format: doc.format,
+        sections: doc.sections,
+        sheets: doc.sheets,
+      }).toString('utf8'),
+    ),
+  }
+  contexts.set(doc.original, value)
+  return value
+}
+
 export async function digest(value: string | ArrayBuffer): Promise<string> {
   const bytes = typeof value === 'string' ? new TextEncoder().encode(value) : new Uint8Array(value)
   return toHex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)))
@@ -83,25 +147,15 @@ export async function createRevision(
   }
 }
 export async function verifyHistory(doc: LibraryDocument): Promise<void> {
-  const expectedGenesis = toHex(await computeGenesisSAI(doc.actor, fromHex(doc.salt)))
-  if (expectedGenesis !== doc.genesis || doc.revisions.length === 0)
-    throw new Error('版本來源驗證失敗，已停止編輯。')
-  if ((await digest(await doc.original.arrayBuffer())) !== doc.originalHash)
-    throw new Error('原始檔完整性驗證失敗。')
+  if (doc.revisions.length === 0) throw new Error('版本來源驗證失敗，已停止編輯。')
+  const context = await verifiedContext(doc)
   let expected = doc.genesis
-  const viewHash = await digest(
-    marshal({
-      title: doc.title,
-      filename: doc.filename,
-      format: doc.format,
-      sections: doc.sections,
-      sheets: doc.sheets,
-    }).toString('utf8'),
-  )
+  const { viewHash } = context
   let parentId: string | null = null
   const ids = new Set<string>()
   let inBranch = false
   for (const revision of doc.revisions) {
+    freezeTree(revision)
     if (
       !['import', 'edit', 'note', 'restore', 'fork', 'adopt'].includes(revision.kind) ||
       (parentId === null ? revision.kind !== 'import' : revision.kind === 'import')
@@ -117,6 +171,12 @@ export async function verifyHistory(doc: LibraryDocument): Promise<void> {
     } else if (inBranch || revision.kind === 'fork') throw new Error('沙盒版本鏈不連續。')
     if (revision.prevSAI !== expected || revision.parentId !== parentId || ids.has(revision.id))
       throw new Error('版本鏈不連續，已停止編輯。')
+    if (verified.get(revision) === context) {
+      ids.add(revision.id)
+      parentId = revision.id
+      expected = revision.sai
+      continue
+    }
     const env = JSON.parse(revision.envelope)
     if (
       marshal(env).toString('utf8') !== revision.envelope ||
@@ -159,6 +219,8 @@ export async function verifyHistory(doc: LibraryDocument): Promise<void> {
       await computeSAI(fromHex(expected), new TextEncoder().encode(revision.envelope)),
     )
     if (computed !== revision.sai) throw new Error('版本識別碼驗證失敗。')
+    freezeTree(revision)
+    verified.set(revision, context)
     ids.add(revision.id)
     parentId = revision.id
     expected = computed
